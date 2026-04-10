@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Mapa de Calor KRI — NIST CSF 2.0</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app-container">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <a class="topbar-brand" href="/heatmap.html">
+      <div class="shield">🛡</div>
+      <span>KRI Dashboard</span>
+    </a>
+    <nav class="topbar-nav">
+      <a href="/heatmap.html" data-page="heatmap">Mapa de Calor</a>
+      <a href="/data.html"    data-page="data">Datos</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-user">
+      <span>👤 <span id="topbarUser"></span></span>
+      <button class="btn-logout" id="logoutBtn">Salir</button>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="page-header">
+      <h1>Mapa de Calor de KRIs</h1>
+      <p>NIST Cybersecurity Framework 2.0 · Haga clic en una función, categoría o subcategoría para profundizar</p>
+    </div>
+
+    <!-- Stats row -->
+    <div class="heatmap-stats" id="statsRow">
+      <div class="stat-card"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total subcategorías</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-withkri">—</div><div class="stat-label">Con KRI asignado</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-avg" style="color:var(--text-muted)">—</div><div class="stat-label">KRI promedio global</div></div>
+      <div class="stat-card"><div class="stat-value" id="stat-critical" style="color:var(--color-critical)">—</div><div class="stat-label">Subcategorías críticas</div></div>
+    </div>
+
+    <!-- Breadcrumb -->
+    <div class="breadcrumb" id="breadcrumb">
+      <span class="breadcrumb-item current" data-level="root">Todas las funciones</span>
+    </div>
+
+    <!-- Heat map -->
+    <div class="heatmap-container">
+      <div class="heatmap-level-title" id="levelTitle">FUNCIONES CSF 2.0</div>
+      <div class="heatmap-grid" id="heatmapGrid">
+        <div style="color:var(--text-muted);padding:2rem">Cargando datos...</div>
+      </div>
+    </div>
+
+    <!-- Legend -->
+    <div class="heatmap-legend">
+      <span>Nivel de riesgo:</span>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--color-nodata)"></div> Sin datos</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--color-low)"></div> Bajo (0–2.5)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--color-medium)"></div> Medio (2.5–5)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--color-high)"></div> Alto (5–7.5)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:var(--color-critical)"></div> Crítico (7.5–10)</div>
+    </div>
+  </main>
+</div>
+
+<!-- KRI Edit Modal -->
+<div class="modal-overlay hidden" id="kriModal">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title">
+        <h2 id="modalSubCode">—</h2>
+        <p id="modalSubDesc">—</p>
+      </div>
+      <button class="modal-close" id="modalClose">✕</button>
+    </div>
+    <div class="modal-body">
+      <form id="kriForm">
+        <div class="form-group">
+          <label>KRI — Descripción / Fórmula</label>
+          <textarea id="kri_text" rows="3" placeholder="Ej: % de vulnerabilidades críticas sin parchear en los últimos 30 días"></textarea>
+        </div>
+        <div class="form-row">
+          <div class="form-group">
+            <label>Valor (0.00 – 10.00)</label>
+            <input type="number" id="kri_value" min="0" max="10" step="0.01" placeholder="0.00">
+            <div class="hint">0 = sin riesgo · 10 = riesgo máximo</div>
+          </div>
+          <div class="form-group">
+            <label>Fecha de medición</label>
+            <input type="date" id="kri_date">
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-danger" id="btnDeleteKri" style="display:none">Eliminar KRI</button>
+      <button class="btn btn-secondary" id="btnCancelKri">Cancelar</button>
+      <button class="btn btn-primary" id="btnSaveKri">Guardar KRI</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/common.js"></script>
+<script src="/js/heatmap.js"></script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where python3:*)",
+      "Bash(where node:*)",
+      "Bash(npm --version)",
+      "Bash(node -e ':*)",
+      "Bash(npm install:*)",
+      "Bash(timeout 8 node server.js)",
+      "Bash(node server.js)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/login.html)",
+      "Bash(start:*)",
+      "Bash(pkill -f \"node server.js\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/data.html)",
+      "Bash(gh auth:*)"
+    ]
+  }
+}

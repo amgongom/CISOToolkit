@@ -1,0 +1,16 @@
+{
+  "name": "kri-dashboard",
+  "version": "1.0.0",
+  "description": "CISO KRI Dashboard - NIST CSF 2.0",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "better-sqlite3": "^9.4.3",
+    "express": "^4.18.2",
+    "express-session": "^1.17.3"
+  }
+}
