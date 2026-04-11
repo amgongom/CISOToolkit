@@ -46,30 +46,50 @@ function updateStats() {
 }
 
 // ── Color helper ──────────────────────────────────────────────────────────────
+// Interpolación suave entre 5 anclajes de color (rojo→naranja→amarillo→lima→verde)
+const COLOR_STOPS = [
+  { v:   0, r: 239, g:  68, b:  68 },  // #ef4444  N1 rojo
+  { v:  20, r: 249, g: 115, b:  22 },  // #f97316  N1→N2
+  { v:  40, r: 251, g: 191, b:  36 },  // #fbbf24  N2→N3 amarillo
+  { v:  60, r: 163, g: 230, b:  53 },  // #a3e635  N3→N4 lima
+  { v:  80, r:  22, g: 163, b:  74 },  // #16a34a  N4→N5 verde oscuro
+  { v: 100, r:  22, g: 163, b:  74 },  // #16a34a  N5 verde oscuro
+];
+
 function cmmiColor(val) {
-  if (val == null) return '#64748b';
-  if (val <= 20)   return '#dc2626';
-  if (val <= 40)   return '#f97316';
-  if (val <= 60)   return '#eab308';
-  if (val <= 80)   return '#84cc16';
-  return '#16a34a';
+  if (val == null) return '#475569';
+  const v  = Math.max(0, Math.min(100, val));
+  let lo = COLOR_STOPS[0], hi = COLOR_STOPS[COLOR_STOPS.length - 1];
+  for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
+    if (v >= COLOR_STOPS[i].v && v <= COLOR_STOPS[i + 1].v) {
+      lo = COLOR_STOPS[i]; hi = COLOR_STOPS[i + 1]; break;
+    }
+  }
+  const t = lo.v === hi.v ? 0 : (v - lo.v) / (hi.v - lo.v);
+  const r = Math.round(lo.r + t * (hi.r - lo.r));
+  const g = Math.round(lo.g + t * (hi.g - lo.g));
+  const b = Math.round(lo.b + t * (hi.b - lo.b));
+  return `rgb(${r},${g},${b})`;
 }
 
 // ── Build ECharts tree data ───────────────────────────────────────────────────
 function buildTreeData() {
   return allData.map(fn => ({
+    id:         fn.code,
     name:       `${fn.name}  ·  ${fn.code}`,
     label_full: fn.name,
     value:      fn.totalSubcategories,
     valoracion: fn.avgValoracion,
     itemStyle:  { color: cmmiColor(fn.avgValoracion) },
     children: fn.categories.map(cat => ({
+      id:         cat.code,
       name:       `${cat.name}  ·  ${cat.code}`,
       label_full: cat.name,
       value:      cat.totalSubcategories,
       valoracion: cat.avgValoracion,
       itemStyle:  { color: cmmiColor(cat.avgValoracion) },
       children: cat.subcategories.map(s => ({
+        id:         `sub_${s.id}`,
         name:       s.code,
         label_full: s.kri_name || '',
         value:      1,
@@ -111,7 +131,14 @@ function renderTreemap() {
       height:     '100%',
       roam:       false,
       nodeClick:  false,
-      breadcrumb: { show: false },
+      breadcrumb: {
+        show:      true,
+        bottom:    4,
+        height:    28,
+        itemStyle: { color: '#1e293b', borderColor: '#475569', borderWidth: 1 },
+        textStyle: { color: '#f1f5f9', fontSize: 13 },
+        emphasis:  { itemStyle: { color: '#334155' } },
+      },
       visibleMin: 200,
       levels: [
         // ── Raíz implícita (nivel 0) — ocultar ───────────────────────────────
@@ -167,14 +194,23 @@ function renderTreemap() {
 
   echartsInst.setOption(option);
 
-  // Click en hoja (subcategoría) → abrir modal KRI
+  // Click: subcategoría (hoja) → modal | función/categoría → drill-down
   echartsInst.on('click', (params) => {
-    if (params.data && params.data.subId) {
+    if (!params.data) return;
+    if (params.data.subId) {
       const sub = subById[params.data.subId];
       if (sub) openModal(sub);
+    } else {
+      echartsInst.dispatchAction({
+        type:         'treemapZoomToNode',
+        seriesIndex:  0,
+        targetNodeId: params.data.id,
+      });
     }
   });
 
+  const ro = new ResizeObserver(() => echartsInst.resize());
+  ro.observe(el);
   window.addEventListener('resize', () => echartsInst.resize());
 }
 

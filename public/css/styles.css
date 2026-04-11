@@ -13,10 +13,10 @@
 
   /* CMMI heat colors (N1-N5, escala 0-100) */
   --color-nodata: #475569;
-  --color-n1:     #dc2626;   /* 0-20  Inicial */
+  --color-n1:     #ef4444;   /* 0-20  Inicial */
   --color-n2:     #f97316;   /* 21-40 Gestionado */
-  --color-n3:     #eab308;   /* 41-60 Definido */
-  --color-n4:     #84cc16;   /* 61-80 Cuantitativamente Gestionado */
+  --color-n3:     #fbbf24;   /* 41-60 Definido */
+  --color-n4:     #a3e635;   /* 61-80 Cuantitativamente Gestionado */
   --color-n5:     #16a34a;   /* 81-100 En Optimización */
 
   --radius: 8px;
@@ -223,7 +223,7 @@ p  { color: var(--text-muted); }
 .heatmap-cell.n2      { background: var(--color-n2); }
 .heatmap-cell.n3      { background: var(--color-n3); color: #1e293b; }
 .heatmap-cell.n4      { background: var(--color-n4); color: #1e293b; }
-.heatmap-cell.n5      { background: var(--color-n5); }
+.heatmap-cell.n5      { background: var(--color-n5); color: #fff; }
 
 .heatmap-cell .cell-code {
   font-size: .75rem;
@@ -423,7 +423,7 @@ tbody td {
 .kri-badge.n2      { background: var(--color-n2); }
 .kri-badge.n3      { background: var(--color-n3); color: #1e293b; }
 .kri-badge.n4      { background: var(--color-n4); color: #1e293b; }
-.kri-badge.n5      { background: var(--color-n5); }
+.kri-badge.n5      { background: var(--color-n5); color: #fff; }
 
 .no-data-text { color: var(--text-muted); font-style: italic; font-size: .8rem; }
 
