@@ -64,7 +64,7 @@ function buildTreeData() {
     valoracion: fn.avgValoracion,
     itemStyle:  { color: cmmiColor(fn.avgValoracion) },
     children: fn.categories.map(cat => ({
-      name:       cat.code,
+      name:       `${cat.name}  ·  ${cat.code}`,
       label_full: cat.name,
       value:      cat.totalSubcategories,
       valoracion: cat.avgValoracion,
