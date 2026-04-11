@@ -1,21 +1,9 @@
-/* KRI Heatmap — Plotly Treemap */
+/* KRI Heatmap — ECharts Treemap */
 'use strict';
 
-// Colorscale CMMI 0-100 (cmin=-1 para "sin datos" → gris)
-// Normalized positions: (value+1)/101
-const COLORSCALE = [
-  [0,       '#64748b'],  // -1  → sin datos (gris)
-  [0.0098,  '#64748b'],  // ~0  → todavía gris
-  [0.0099,  '#dc2626'],  // 0   → N1 rojo
-  [0.208,   '#f97316'],  // 20  → N1/N2
-  [0.406,   '#eab308'],  // 40  → N2/N3
-  [0.604,   '#84cc16'],  // 60  → N3/N4
-  [0.802,   '#22c55e'],  // 80  → N4/N5
-  [1.0,     '#16a34a'],  // 100 → N5 verde
-];
-
-let allData   = [];
-let subById   = {};   // subcategory id → data
+let allData      = [];
+let subById      = {};
+let echartsInst  = null;
 let editingSubId = null;
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
@@ -30,7 +18,6 @@ async function loadData() {
   const res = await fetch('/api/heatmap');
   allData = await res.json();
 
-  // Build sub lookup
   allData.forEach(fn => fn.categories.forEach(cat => cat.subcategories.forEach(s => {
     subById[s.id] = s;
   })));
@@ -53,105 +40,142 @@ function updateStats() {
   const avgEl = document.getElementById('stat-avg');
   if (vals.length) {
     const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    avgEl.textContent  = avg.toFixed(1);
-    avgEl.style.color  = `var(--color-${kriClass(avg)})`;
+    avgEl.textContent = avg.toFixed(1);
+    avgEl.style.color = `var(--color-${kriClass(avg)})`;
   }
 }
 
-// ── Plotly Treemap ────────────────────────────────────────────────────────────
+// ── Color helper ──────────────────────────────────────────────────────────────
+function cmmiColor(val) {
+  if (val == null) return '#64748b';
+  if (val <= 20)   return '#dc2626';
+  if (val <= 40)   return '#f97316';
+  if (val <= 60)   return '#eab308';
+  if (val <= 80)   return '#84cc16';
+  return '#16a34a';
+}
+
+// ── Build ECharts tree data ───────────────────────────────────────────────────
+function buildTreeData() {
+  return allData.map(fn => ({
+    name:       `${fn.name}  ·  ${fn.code}`,
+    label_full: fn.name,
+    value:      fn.totalSubcategories,
+    valoracion: fn.avgValoracion,
+    itemStyle:  { color: cmmiColor(fn.avgValoracion) },
+    children: fn.categories.map(cat => ({
+      name:       cat.code,
+      label_full: cat.name,
+      value:      cat.totalSubcategories,
+      valoracion: cat.avgValoracion,
+      itemStyle:  { color: cmmiColor(cat.avgValoracion) },
+      children: cat.subcategories.map(s => ({
+        name:       s.code,
+        label_full: s.kri_name || '',
+        value:      1,
+        valoracion: s.valoracion,
+        subId:      s.id,
+        itemStyle:  { color: cmmiColor(s.valoracion) },
+      }))
+    }))
+  }));
+}
+
+// ── ECharts Treemap ───────────────────────────────────────────────────────────
 function renderTreemap() {
-  const ids        = [];
-  const labels     = [];
-  const parents    = [];
-  const values     = [];
-  const colors     = [];
-  const customdata = [];  // [valoracion, kri_name, cmmi_flag, code, sub_id]
+  const el = document.getElementById('treemapChart');
 
-  allData.forEach(fn => {
-    ids.push(fn.code);
-    labels.push(`<b>${fn.name}</b><br>${fn.code}`);
-    parents.push('');
-    values.push(0);
-    colors.push(fn.avgValoracion != null ? fn.avgValoracion : -1);
-    customdata.push([fn.avgValoracion, fn.name, '', fn.code, '']);
+  if (echartsInst) { echartsInst.dispose(); }
+  echartsInst = echarts.init(el, null, { renderer: 'canvas' });
 
-    fn.categories.forEach(cat => {
-      ids.push(cat.code);
-      labels.push(`${cat.name}<br><b>${cat.code}</b>`);
-      parents.push(fn.code);
-      values.push(0);
-      colors.push(cat.avgValoracion != null ? cat.avgValoracion : -1);
-      customdata.push([cat.avgValoracion, cat.name, '', cat.code, '']);
-
-      cat.subcategories.forEach(s => {
-        ids.push(s.code);
-        labels.push(`<b>${s.code}</b>`);
-        parents.push(cat.code);
-        values.push(1);
-        colors.push(s.valoracion != null ? s.valoracion : -1);
-        customdata.push([s.valoracion, s.kri_name || '', s.cmmi_flag || '', s.code, s.id]);
-      });
-    });
-  });
-
-  const trace = {
-    type: 'treemap',
-    ids, labels, parents, values,
-    branchvalues: 'remainder',
-    marker: {
-      colors,
-      colorscale: COLORSCALE,
-      cmin: -1,
-      cmax: 100,
-      showscale: true,
-      colorbar: {
-        title: { text: 'Valoración', side: 'right', font: { color: '#f1f5f9', size: 11 } },
-        tickvals: [0, 20, 40, 60, 80, 100],
-        ticktext: ['0 N1', '20', '40 N3', '60', '80', '100 N5'],
-        tickfont: { color: '#f1f5f9', size: 10 },
-        bgcolor: '#1e293b',
-        bordercolor: '#475569',
-        thickness: 16,
-        len: 0.7,
+  const option = {
+    backgroundColor: '#1e293b',
+    tooltip: {
+      show: true,
+      backgroundColor: '#0f172a',
+      borderColor: '#334155',
+      textStyle: { color: '#f1f5f9', fontFamily: 'Segoe UI, system-ui, sans-serif' },
+      formatter: (params) => {
+        const d = params.data;
+        if (!d) return '';
+        const val = d.valoracion != null ? Number(d.valoracion).toFixed(1) : '—';
+        const lvl = d.valoracion != null ? cmmiLevelName(d.valoracion) : 'Sin datos';
+        const kri = d.label_full ? `<br><span style="color:#94a3b8">${d.label_full}</span>` : '';
+        return `<b>${d.name}</b>${kri}<br>Valoración: <b style="color:${cmmiColor(d.valoracion)}">${val}</b> · ${lvl}`;
       }
     },
-    customdata,
-    hovertemplate:
-      '<b>%{label}</b><br>' +
-      'Valoración: <b>%{customdata[0]:.1f}</b><br>' +
-      '%{customdata[1]}<br>' +
-      '<i>%{customdata[2]}</i>' +
-      '<extra></extra>',
-    pathbar: { visible: true, side: 'top', thickness: 28 },
-    tiling: { packing: 'squarify' },
-    textfont: { size: 11, color: 'white' },
-    insidetextfont: { size: 11, color: 'white' },
+    series: [{
+      type:       'treemap',
+      data:       buildTreeData(),
+      width:      '100%',
+      height:     '100%',
+      roam:       false,
+      nodeClick:  false,
+      breadcrumb: { show: false },
+      visibleMin: 200,
+      levels: [
+        // ── Raíz implícita (nivel 0) — ocultar ───────────────────────────────
+        {
+          itemStyle: { borderColor: '#1e293b', borderWidth: 0, gapWidth: 0 },
+          label:      { show: false },
+          upperLabel: { show: false },
+        },
+        // ── Funciones (nivel 1) ───────────────────────────────────────────────
+        {
+          itemStyle: { borderColor: '#0f172a', borderWidth: 6, gapWidth: 6 },
+          upperLabel: {
+            show:            true,
+            height:          52,
+            fontSize:        20,
+            fontWeight:      'bold',
+            color:           '#fff',
+            backgroundColor: 'rgba(0,0,0,0.30)',
+            padding:         [8, 14],
+            overflow:        'truncate',
+          },
+          label: { show: false },
+        },
+        // ── Categorías (nivel 2) ──────────────────────────────────────────────
+        {
+          itemStyle: { borderColor: '#1e293b', borderWidth: 3, gapWidth: 3 },
+          upperLabel: {
+            show:            true,
+            height:          30,
+            fontSize:        12,
+            fontWeight:      '600',
+            color:           '#fff',
+            backgroundColor: 'rgba(0,0,0,0.22)',
+            padding:         [5, 8],
+            overflow:        'truncate',
+          },
+          label: { show: false },
+        },
+        // ── Subcategorías (nivel 3, hojas) ────────────────────────────────────
+        {
+          itemStyle: { borderColor: '#1e293b', borderWidth: 1, gapWidth: 1 },
+          label: {
+            show:     true,
+            fontSize: 9,
+            color:    '#fff',
+            overflow: 'truncate',
+          },
+          upperLabel: { show: false },
+        },
+      ],
+    }]
   };
 
-  const layout = {
-    paper_bgcolor: '#1e293b',
-    plot_bgcolor:  '#1e293b',
-    margin: { t: 10, l: 5, r: 5, b: 5 },
-    font: { family: 'Segoe UI, system-ui, sans-serif', color: '#f1f5f9' },
-  };
+  echartsInst.setOption(option);
 
-  const config = {
-    displayModeBar: true,
-    modeBarButtonsToRemove: ['select2d', 'lasso2d', 'autoScale2d'],
-    displaylogo: false,
-    responsive: true,
-  };
-
-  Plotly.newPlot('treemapChart', [trace], layout, config);
-
-  // Click on leaf (subcategory) → open KRI modal
-  document.getElementById('treemapChart').on('plotly_click', (data) => {
-    const pt    = data.points[0];
-    const subId = pt.customdata[4];
-    if (!subId) return;  // not a leaf
-    const sub = subById[subId];
-    if (sub) openModal(sub);
+  // Click en hoja (subcategoría) → abrir modal KRI
+  echartsInst.on('click', (params) => {
+    if (params.data && params.data.subId) {
+      const sub = subById[params.data.subId];
+      if (sub) openModal(sub);
+    }
   });
+
+  window.addEventListener('resize', () => echartsInst.resize());
 }
 
 // ── Modal ─────────────────────────────────────────────────────────────────────
@@ -170,19 +194,19 @@ function updateCmmiHint() {
   const v = parseFloat(document.getElementById('kri_valoracion').value);
   const hint = document.getElementById('cmmiLevelHint');
   if (isNaN(v)) { hint.textContent = ''; return; }
-  hint.textContent  = cmmiLevelName(v);
-  hint.style.color  = `var(--color-${kriClass(v)})`;
+  hint.textContent = cmmiLevelName(v);
+  hint.style.color = `var(--color-${kriClass(v)})`;
 }
 
 function openModal(sub) {
   editingSubId = sub.id;
-  document.getElementById('modalSubCode').textContent      = sub.code;
-  document.getElementById('modalSubDesc').textContent      = sub.description;
-  document.getElementById('kri_name').value                = sub.kri_name         || '';
-  document.getElementById('kri_description').value         = sub.kri_description  || '';
-  document.getElementById('kri_formula').value             = sub.kri_formula      || '';
-  document.getElementById('kri_valoracion').value          = sub.valoracion  != null ? Number(sub.valoracion).toFixed(1)  : '';
-  document.getElementById('kri_cmmi_flag').value           = sub.cmmi_flag        || '';
+  document.getElementById('modalSubCode').textContent     = sub.code;
+  document.getElementById('modalSubDesc').textContent     = sub.description;
+  document.getElementById('kri_name').value               = sub.kri_name        || '';
+  document.getElementById('kri_description').value        = sub.kri_description || '';
+  document.getElementById('kri_formula').value            = sub.kri_formula     || '';
+  document.getElementById('kri_valoracion').value         = sub.valoracion != null ? Number(sub.valoracion).toFixed(1) : '';
+  document.getElementById('kri_cmmi_flag').value          = sub.cmmi_flag       || '';
   updateCmmiHint();
   document.getElementById('btnDeleteKri').style.display = sub.kri_id ? '' : 'none';
   loadHeatmapHistory(sub.id);
@@ -223,8 +247,8 @@ function closeModal() {
 }
 
 async function saveKri() {
-  const kri_name    = document.getElementById('kri_name').value.trim();
-  const valoracion  = parseFloat(document.getElementById('kri_valoracion').value);
+  const kri_name   = document.getElementById('kri_name').value.trim();
+  const valoracion = parseFloat(document.getElementById('kri_valoracion').value);
   if (!kri_name) { toast('El nombre del KRI es obligatorio', 'error'); return; }
   if (isNaN(valoracion) || valoracion < 0 || valoracion > 100) { toast('La valoración debe estar entre 0 y 100', 'error'); return; }
 
@@ -240,9 +264,9 @@ async function saveKri() {
   btn.disabled = true;
   try {
     const res = await fetch(`/api/kris/${editingSubId}`, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body:    JSON.stringify(body)
     });
     if (!res.ok) throw new Error((await res.json()).error);
     toast('KRI guardado');
