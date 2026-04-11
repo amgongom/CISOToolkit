@@ -4,6 +4,7 @@ const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
+const XLSX = require('xlsx');
 const path = require('path');
 
 const app = express();
@@ -55,12 +56,89 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS kris (
     id               INTEGER PRIMARY KEY AUTOINCREMENT,
     subcategory_id   INTEGER UNIQUE NOT NULL REFERENCES subcategories(id),
-    kri_text         TEXT NOT NULL,
-    value            REAL NOT NULL CHECK(value >= 0 AND value <= 10),
-    measurement_date TEXT NOT NULL,
+    kri_name         TEXT,
+    kri_description  TEXT,
+    kri_formula      TEXT,
+    cmmi_flag        TEXT CHECK(cmmi_flag IN ('POSITIVO','NEGATIVO')),
+    cmmi_levels      TEXT,
+    valoracion       REAL CHECK(valoracion >= 0 AND valoracion <= 100),
     updated_at       TEXT DEFAULT (datetime('now'))
   );
+
+  CREATE TABLE IF NOT EXISTS kri_history (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    subcategory_id INTEGER NOT NULL REFERENCES subcategories(id),
+    valoracion     REAL NOT NULL,
+    saved_by       TEXT NOT NULL,
+    saved_at       TEXT DEFAULT (datetime('now'))
+  );
 `);
+
+// ─── Migrations ───────────────────────────────────────────────────────────────
+(function runMigrations() {
+  const cols = db.prepare("PRAGMA table_info(kris)").all().map(c => c.name);
+
+  // M1: add valoracion / drop old 0-10 schema
+  if (!cols.includes('valoracion')) {
+    console.log('[M1] Migrating kris table to valoracion schema...');
+    db.exec(`
+      DROP TABLE IF EXISTS kris;
+      CREATE TABLE kris (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        subcategory_id   INTEGER UNIQUE NOT NULL REFERENCES subcategories(id),
+        kri_name         TEXT,
+        kri_description  TEXT,
+        kri_formula      TEXT,
+        cmmi_flag        TEXT CHECK(cmmi_flag IN ('POSITIVO','NEGATIVO')),
+        cmmi_levels      TEXT,
+        valoracion       REAL CHECK(valoracion >= 0 AND valoracion <= 100),
+        updated_at       TEXT DEFAULT (datetime('now'))
+      );
+    `);
+    console.log('[M1] Done.');
+  }
+
+  // M2: drop quarterly columns (valor_enero/abril/julio/octubre)
+  if (cols.includes('valor_enero')) {
+    console.log('[M2] Dropping quarterly columns from kris...');
+    db.exec(`
+      CREATE TABLE kris_new (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        subcategory_id   INTEGER UNIQUE NOT NULL REFERENCES subcategories(id),
+        kri_name         TEXT,
+        kri_description  TEXT,
+        kri_formula      TEXT,
+        cmmi_flag        TEXT CHECK(cmmi_flag IN ('POSITIVO','NEGATIVO')),
+        cmmi_levels      TEXT,
+        valoracion       REAL CHECK(valoracion >= 0 AND valoracion <= 100),
+        updated_at       TEXT DEFAULT (datetime('now'))
+      );
+      INSERT INTO kris_new (id,subcategory_id,kri_name,kri_description,kri_formula,
+                            cmmi_flag,cmmi_levels,valoracion,updated_at)
+        SELECT id,subcategory_id,kri_name,kri_description,kri_formula,
+               cmmi_flag,cmmi_levels,valoracion,updated_at FROM kris;
+      DROP TABLE kris;
+      ALTER TABLE kris_new RENAME TO kris;
+    `);
+    console.log('[M2] Done.');
+  }
+
+  // M3: create kri_history if missing
+  const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(r => r.name);
+  if (!tables.includes('kri_history')) {
+    console.log('[M3] Creating kri_history table...');
+    db.exec(`
+      CREATE TABLE kri_history (
+        id             INTEGER PRIMARY KEY AUTOINCREMENT,
+        subcategory_id INTEGER NOT NULL REFERENCES subcategories(id),
+        valoracion     REAL NOT NULL,
+        saved_by       TEXT NOT NULL,
+        saved_at       TEXT DEFAULT (datetime('now'))
+      );
+    `);
+    console.log('[M3] Done.');
+  }
+})();
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
 
@@ -697,6 +775,63 @@ function seedDatabase() {
 
 seedDatabase();
 
+// ─── Import KRIs from Excel ───────────────────────────────────────────────────
+
+function importKRIsFromExcel() {
+  const kriCount = db.prepare('SELECT COUNT(*) as c FROM kris').get().c;
+  if (kriCount > 0) return; // already imported
+
+  const xlsxPath = path.join(__dirname, 'KRIs.xlsx');
+  if (!require('fs').existsSync(xlsxPath)) {
+    console.log('KRIs.xlsx not found, skipping import.');
+    return;
+  }
+
+  console.log('Importing KRIs from KRIs.xlsx...');
+  const wb = XLSX.readFile(xlsxPath);
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1); // skip header
+
+  const getSubId = db.prepare('SELECT id FROM subcategories WHERE code = ?');
+  const upsert   = db.prepare(`
+    INSERT INTO kris (subcategory_id, kri_name, kri_description, kri_formula,
+                      cmmi_flag, cmmi_levels, valoracion)
+    VALUES (?,?,?,?,?,?,?)
+    ON CONFLICT(subcategory_id) DO UPDATE SET
+      kri_name=excluded.kri_name, kri_description=excluded.kri_description,
+      kri_formula=excluded.kri_formula, cmmi_flag=excluded.cmmi_flag,
+      cmmi_levels=excluded.cmmi_levels, valoracion=excluded.valoracion,
+      updated_at=datetime('now')
+  `);
+
+  let imported = 0, skipped = 0;
+  const importAll = db.transaction(() => {
+    rows.forEach(r => {
+      const rawCode = String(r[2] || '');
+      const match   = rawCode.match(/^([A-Z]{2}\.[A-Z]{2}-\d+)/);
+      if (!match) { skipped++; return; }
+      const code = match[1];
+      const sub  = getSubId.get(code);
+      if (!sub) { skipped++; return; }
+
+      upsert.run(
+        sub.id,
+        String(r[4]  || '').trim(),   // kri_name
+        String(r[5]  || '').trim(),   // kri_description
+        String(r[6]  || '').trim(),   // kri_formula
+        String(r[9]  || '').trim() || null,  // cmmi_flag
+        String(r[8]  || '').trim(),   // cmmi_levels
+        r[7]  != null ? parseFloat(r[7])  : null   // valoracion
+      );
+      imported++;
+    });
+  });
+  importAll();
+  console.log(`KRIs imported: ${imported} rows (${skipped} skipped).`);
+}
+
+importKRIsFromExcel();
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 app.use(express.json());
@@ -775,16 +910,18 @@ app.get('/api/examples', requireAuth, (req, res) => {
 
 // Full heat map data (all aggregates)
 app.get('/api/heatmap', requireAuth, (req, res) => {
-  const functions = db.prepare('SELECT * FROM functions ORDER BY code').all();
-  const categories = db.prepare('SELECT * FROM categories ORDER BY code').all();
+  const functions    = db.prepare('SELECT * FROM functions ORDER BY code').all();
+  const categories   = db.prepare('SELECT * FROM categories ORDER BY code').all();
   const subcategories = db.prepare(`
-    SELECT s.*, k.id as kri_id, k.kri_text, k.value as kri_value, k.measurement_date
+    SELECT s.*,
+           k.id as kri_id, k.kri_name, k.kri_description, k.kri_formula,
+           k.cmmi_flag, k.cmmi_levels,
+           k.valoracion
     FROM subcategories s
     LEFT JOIN kris k ON k.subcategory_id = s.id
     ORDER BY s.code
   `).all();
 
-  // Build lookup maps
   const subsByCat = {};
   subcategories.forEach(s => {
     if (!subsByCat[s.category_id]) subsByCat[s.category_id] = [];
@@ -801,24 +938,12 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
 
   const result = functions.map(fn => {
     const fnCats = (catsByFn[fn.id] || []).map(cat => {
-      const catSubs = subsByCat[cat.id] || [];
-      const kriValues = catSubs.filter(s => s.kri_value !== null).map(s => s.kri_value);
-      return {
-        ...cat,
-        subcategories: catSubs,
-        avgKRI: avg(kriValues),
-        kriCount: kriValues.length,
-        totalSubcategories: catSubs.length
-      };
+      const catSubs  = subsByCat[cat.id] || [];
+      const vals     = catSubs.filter(s => s.valoracion != null).map(s => s.valoracion);
+      return { ...cat, subcategories: catSubs, avgValoracion: avg(vals), kriCount: vals.length, totalSubcategories: catSubs.length };
     });
-    const allKriValues = fnCats.flatMap(c => c.subcategories.filter(s => s.kri_value !== null).map(s => s.kri_value));
-    return {
-      ...fn,
-      categories: fnCats,
-      avgKRI: avg(allKriValues),
-      kriCount: allKriValues.length,
-      totalSubcategories: fnCats.reduce((acc, c) => acc + c.totalSubcategories, 0)
-    };
+    const allVals = fnCats.flatMap(c => c.subcategories.filter(s => s.valoracion != null).map(s => s.valoracion));
+    return { ...fn, categories: fnCats, avgValoracion: avg(allVals), kriCount: allVals.length, totalSubcategories: fnCats.reduce((a, c) => a + c.totalSubcategories, 0) };
   });
 
   res.json(result);
@@ -831,21 +956,28 @@ app.get('/api/kris', requireAuth, (req, res) => {
     SELECT s.id as subcategory_id, s.code, s.description, s.category_id,
            c.code as category_code, c.name as category_name, c.function_id,
            f.code as function_code, f.name as function_name,
-           k.id as kri_id, k.kri_text, k.value as kri_value, k.measurement_date, k.updated_at
+           k.id as kri_id, k.kri_name, k.kri_description, k.kri_formula,
+           k.cmmi_flag, k.cmmi_levels, k.valoracion, k.updated_at,
+           h.saved_by as last_saved_by, h.saved_at as last_saved_at
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
     LEFT JOIN kris k ON k.subcategory_id = s.id
+    LEFT JOIN (
+      SELECT subcategory_id, saved_by, saved_at
+      FROM kri_history
+      WHERE id IN (SELECT MAX(id) FROM kri_history GROUP BY subcategory_id)
+    ) h ON h.subcategory_id = s.id
     WHERE 1=1
   `;
   const params = [];
-  if (functionId)    { sql += ' AND f.id = ?';   params.push(functionId); }
-  if (categoryId)    { sql += ' AND c.id = ?';   params.push(categoryId); }
-  if (subcategoryId) { sql += ' AND s.id = ?';   params.push(subcategoryId); }
-  if (search)        {
-    sql += ' AND (s.code LIKE ? OR s.description LIKE ? OR k.kri_text LIKE ?)';
+  if (functionId)    { sql += ' AND f.id = ?';  params.push(functionId); }
+  if (categoryId)    { sql += ' AND c.id = ?';  params.push(categoryId); }
+  if (subcategoryId) { sql += ' AND s.id = ?';  params.push(subcategoryId); }
+  if (search) {
+    sql += ' AND (s.code LIKE ? OR s.description LIKE ? OR k.kri_name LIKE ? OR k.kri_description LIKE ?)';
     const q = `%${search}%`;
-    params.push(q, q, q);
+    params.push(q, q, q, q);
   }
   sql += ' ORDER BY s.code';
   res.json(db.prepare(sql).all(...params));
@@ -853,26 +985,47 @@ app.get('/api/kris', requireAuth, (req, res) => {
 
 app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
   const { subcategoryId } = req.params;
-  const { kri_text, value, measurement_date } = req.body;
-  if (!kri_text || value === undefined || !measurement_date)
-    return res.status(400).json({ error: 'kri_text, value y measurement_date son requeridos' });
-  const v = parseFloat(value);
-  if (isNaN(v) || v < 0 || v > 10)
-    return res.status(400).json({ error: 'El valor debe estar entre 0 y 10' });
+  const { kri_name, kri_description, kri_formula, cmmi_flag, cmmi_levels, valoracion } = req.body;
+
+  if (!kri_name) return res.status(400).json({ error: 'kri_name es requerido' });
+  const v = parseFloat(valoracion);
+  if (isNaN(v) || v < 0 || v > 100)
+    return res.status(400).json({ error: 'valoracion debe estar entre 0 y 100' });
 
   try {
-    const existing = db.prepare('SELECT id FROM kris WHERE subcategory_id = ?').get(subcategoryId);
-    if (existing) {
-      db.prepare('UPDATE kris SET kri_text=?, value=?, measurement_date=?, updated_at=datetime(\'now\') WHERE subcategory_id=?')
-        .run(kri_text, v, measurement_date, subcategoryId);
-    } else {
-      db.prepare('INSERT INTO kris (subcategory_id, kri_text, value, measurement_date) VALUES (?,?,?,?)')
-        .run(subcategoryId, kri_text, v, measurement_date);
-    }
+    db.prepare(`
+      INSERT INTO kris (subcategory_id, kri_name, kri_description, kri_formula,
+                        cmmi_flag, cmmi_levels, valoracion)
+      VALUES (?,?,?,?,?,?,?)
+      ON CONFLICT(subcategory_id) DO UPDATE SET
+        kri_name=excluded.kri_name, kri_description=excluded.kri_description,
+        kri_formula=excluded.kri_formula, cmmi_flag=excluded.cmmi_flag,
+        cmmi_levels=excluded.cmmi_levels, valoracion=excluded.valoracion,
+        updated_at=datetime('now')
+    `).run(subcategoryId, kri_name, kri_description||null, kri_formula||null,
+           cmmi_flag||null, cmmi_levels||null, v);
+
+    // Record history entry
+    db.prepare(`
+      INSERT INTO kri_history (subcategory_id, valoracion, saved_by)
+      VALUES (?, ?, ?)
+    `).run(subcategoryId, v, req.session.username);
+
     res.json({ ok: true });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
+});
+
+app.get('/api/kris/:subcategoryId/history', requireAuth, (req, res) => {
+  const rows = db.prepare(`
+    SELECT valoracion, saved_by, saved_at
+    FROM kri_history
+    WHERE subcategory_id = ?
+    ORDER BY saved_at DESC
+    LIMIT 50
+  `).all(req.params.subcategoryId);
+  res.json(rows);
 });
 
 app.delete('/api/kris/:subcategoryId', requireAuth, (req, res) => {

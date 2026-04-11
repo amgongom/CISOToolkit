@@ -11,12 +11,13 @@
   --accent:     #3b82f6;
   --accent-hover: #2563eb;
 
-  /* KRI heat colors */
+  /* CMMI heat colors (N1-N5, escala 0-100) */
   --color-nodata: #475569;
-  --color-low:    #16a34a;
-  --color-medium: #ca8a04;
-  --color-high:   #ea580c;
-  --color-critical: #dc2626;
+  --color-n1:     #dc2626;   /* 0-20  Inicial */
+  --color-n2:     #f97316;   /* 21-40 Gestionado */
+  --color-n3:     #eab308;   /* 41-60 Definido */
+  --color-n4:     #84cc16;   /* 61-80 Cuantitativamente Gestionado */
+  --color-n5:     #16a34a;   /* 81-100 En Optimización */
 
   --radius: 8px;
   --shadow: 0 4px 16px rgba(0,0,0,.4);
@@ -217,11 +218,12 @@ p  { color: var(--text-muted); }
   box-shadow: 0 8px 24px rgba(0,0,0,.4);
   border-color: rgba(255,255,255,.2);
 }
-.heatmap-cell.no-data    { background: var(--color-nodata); }
-.heatmap-cell.low        { background: var(--color-low); }
-.heatmap-cell.medium     { background: var(--color-medium); }
-.heatmap-cell.high       { background: var(--color-high); }
-.heatmap-cell.critical   { background: var(--color-critical); }
+.heatmap-cell.no-data { background: var(--color-nodata); }
+.heatmap-cell.n1      { background: var(--color-n1); }
+.heatmap-cell.n2      { background: var(--color-n2); }
+.heatmap-cell.n3      { background: var(--color-n3); color: #1e293b; }
+.heatmap-cell.n4      { background: var(--color-n4); color: #1e293b; }
+.heatmap-cell.n5      { background: var(--color-n5); }
 
 .heatmap-cell .cell-code {
   font-size: .75rem;
@@ -416,11 +418,12 @@ tbody td {
   font-weight: 700;
   color: white;
 }
-.kri-badge.no-data    { background: var(--color-nodata); }
-.kri-badge.low        { background: var(--color-low); }
-.kri-badge.medium     { background: var(--color-medium); }
-.kri-badge.high       { background: var(--color-high); }
-.kri-badge.critical   { background: var(--color-critical); }
+.kri-badge.no-data { background: var(--color-nodata); }
+.kri-badge.n1      { background: var(--color-n1); }
+.kri-badge.n2      { background: var(--color-n2); }
+.kri-badge.n3      { background: var(--color-n3); color: #1e293b; }
+.kri-badge.n4      { background: var(--color-n4); color: #1e293b; }
+.kri-badge.n5      { background: var(--color-n5); }
 
 .no-data-text { color: var(--text-muted); font-style: italic; font-size: .8rem; }
 

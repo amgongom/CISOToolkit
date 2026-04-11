@@ -13,7 +13,7 @@
   <header class="topbar">
     <a class="topbar-brand" href="/heatmap.html">
       <div class="shield">🛡</div>
-      <span>KRI Dashboard</span>
+      <span>Key Risk Indicators</span>
     </a>
     <nav class="topbar-nav">
       <a href="/heatmap.html" data-page="heatmap">Mapa de Calor</a>
@@ -75,8 +75,9 @@
             <th>Subcategoría</th>
             <th>Ejemplos</th>
             <th>KRI</th>
-            <th style="text-align:center">Valor</th>
-            <th>Fecha medición</th>
+            <th style="text-align:center">Valoración</th>
+            <th style="text-align:center">CMMI</th>
+            <th style="text-align:center">Última actualización</th>
             <th style="text-align:center">Acciones</th>
           </tr>
         </thead>
@@ -124,21 +125,38 @@
       </div>
       <form id="kriForm" autocomplete="off">
         <div class="form-group">
-          <label>KRI — Descripción / Fórmula</label>
-          <textarea id="kri_text" rows="3" placeholder="Ej: % de vulnerabilidades críticas sin parchear en los últimos 30 días"></textarea>
+          <label>Nombre / Título del KRI</label>
+          <input type="text" id="kri_name" placeholder="Ej: % de activos sin inventariar">
+        </div>
+        <div class="form-group">
+          <label>Descripción del KRI</label>
+          <textarea id="kri_description" rows="2" placeholder="Descripción del indicador..."></textarea>
+        </div>
+        <div class="form-group">
+          <label>Fórmula de Cálculo</label>
+          <textarea id="kri_formula" rows="2" placeholder="Ej: (Activos no registrados / Total activos) × 100"></textarea>
         </div>
         <div class="form-row">
           <div class="form-group">
-            <label>Valor (0.00 – 10.00)</label>
-            <input type="number" id="kri_value" min="0" max="10" step="0.01" placeholder="0.00">
-            <div class="hint">0 = sin riesgo · 10 = riesgo máximo</div>
+            <label>Valoración actual (0–100)</label>
+            <input type="number" id="kri_valoracion" min="0" max="100" step="0.1" placeholder="0.0">
+            <div class="hint" id="cmmiLevelHint" style="margin-top:.3rem;font-weight:600"></div>
           </div>
           <div class="form-group">
-            <label>Fecha de medición</label>
-            <input type="date" id="kri_date">
+            <label>CMMI Flag</label>
+            <select id="kri_cmmi_flag" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.6rem .85rem;font-size:.9rem;width:100%">
+              <option value="">— seleccionar —</option>
+              <option value="POSITIVO">POSITIVO (↑ = mejor)</option>
+              <option value="NEGATIVO">NEGATIVO (↑ = peor)</option>
+            </select>
           </div>
         </div>
       </form>
+      <!-- History -->
+      <div id="kriHistoryBox" style="display:none;margin-top:1.25rem">
+        <div style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Historial de valoraciones</div>
+        <div id="kriHistoryList" style="max-height:180px;overflow-y:auto;font-size:.82rem"></div>
+      </div>
     </div>
     <div class="modal-footer">
       <button class="btn btn-danger" id="btnDeleteKri" style="display:none">Eliminar KRI</button>
