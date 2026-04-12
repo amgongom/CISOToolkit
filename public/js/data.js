@@ -96,7 +96,7 @@ function resetFilters() {
 function renderTable(rows) {
   const tbody = document.getElementById('tableBody');
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="12" class="table-empty">No se encontraron resultados</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="9" class="table-empty">No se encontraron resultados</td></tr>';
     return;
   }
 
@@ -109,7 +109,10 @@ function renderTable(rows) {
     tr.innerHTML = `
       <td><span style="font-size:.82rem">${r.function_name} <span style="font-family:monospace;font-weight:700;color:var(--accent)">(${r.function_code})</span></span></td>
       <td><span style="font-size:.82rem">${r.category_name} <span class="td-code">(${r.category_code})</span></span></td>
-      <td><span class="td-code">${r.code}</span></td>
+      <td style="font-size:.82rem">
+        <span class="td-code">${r.code}</span>
+        <div style="color:var(--text-muted);font-size:.78rem;line-height:1.4;margin-top:.2rem">${r.description}</div>
+      </td>
       <td style="text-align:center">
         <button class="btn-ex-link" data-sub-id="${r.subcategory_id}" title="Ver ejemplos de implementación">
           Cargando…
@@ -124,13 +127,15 @@ function renderTable(rows) {
       <td style="text-align:center;font-size:.82rem">
         ${level ? `<span style="color:var(--color-${cls});font-weight:600">${level}</span>` : '<span class="no-data-text">—</span>'}
       </td>
-      <td style="text-align:center;font-size:.78rem;white-space:nowrap">
+      <td style="text-align:center;font-size:.78rem">
         ${r.last_saved_at
           ? `<span style="color:var(--text)">${formatDateTime(r.last_saved_at)}</span><br><span style="color:var(--text-muted)">${r.last_saved_by}</span>`
           : '<span class="no-data-text">—</span>'}
       </td>
       <td class="td-actions">
-        <button class="btn-icon" title="Editar KRI" data-id="${r.subcategory_id}">✎</button>
+        ${hasKri
+          ? `<button class="btn-icon" title="Editar KRI"   data-id="${r.subcategory_id}">✎</button>`
+          : `<button class="btn-icon btn-icon-add" title="Agregar KRI" data-id="${r.subcategory_id}">＋</button>`}
       </td>
     `;
 
@@ -226,7 +231,12 @@ function bindModal() {
 }
 
 function updateCmmiHint() {
-  const v = parseFloat(document.getElementById('kri_valoracion').value);
+  const input = document.getElementById('kri_valoracion');
+  let v = parseFloat(input.value);
+  if (!isNaN(v)) {
+    if (v > 100) { v = 100; input.value = '100'; }
+    if (v < 0)   { v = 0;   input.value = '0'; }
+  }
   const hint = document.getElementById('cmmiLevelHint');
   if (isNaN(v)) { hint.textContent = ''; return; }
   hint.textContent = cmmiLevelName(v);
@@ -235,8 +245,11 @@ function updateCmmiHint() {
 
 async function openModal(row) {
   editingSubId = row.subcategory_id;
-  document.getElementById('modalSubCode').textContent      = row.code;
-  document.getElementById('modalSubDesc').textContent      = row.description;
+  document.getElementById('modalTitle').textContent         = row.kri_id ? 'Editar KRI' : 'Agregar KRI';
+  document.getElementById('fieldFuncion').textContent       = `${row.function_name} (${row.function_code})`;
+  document.getElementById('fieldCategoria').textContent    = `${row.category_name} (${row.category_code})`;
+  document.getElementById('fieldSubcategoria').textContent = row.code;
+  document.getElementById('fieldDescripcion').textContent  = row.description;
   document.getElementById('kri_name').value                = row.kri_name        || '';
   document.getElementById('kri_description').value         = row.kri_description || '';
   document.getElementById('kri_formula').value             = row.kri_formula     || '';

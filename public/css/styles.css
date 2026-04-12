@@ -396,7 +396,6 @@ tbody td {
   font-family: monospace;
   font-size: .8rem;
   font-weight: 600;
-  white-space: nowrap;
   color: var(--accent);
 }
 .td-desc {
@@ -406,9 +405,9 @@ tbody td {
   line-height: 1.4;
 }
 .td-kri { max-width: 220px; font-size: .82rem; }
-.td-value { text-align: center; font-weight: 700; white-space: nowrap; }
-.td-date  { white-space: nowrap; color: var(--text-muted); font-size: .8rem; }
-.td-actions { text-align: center; white-space: nowrap; }
+.td-value { text-align: center; font-weight: 700; }
+.td-date  { color: var(--text-muted); font-size: .8rem; }
+.td-actions { text-align: center; }
 
 .kri-badge {
   display: inline-block;
@@ -456,8 +455,10 @@ tbody td {
   justify-content: center;
   transition: background .15s, color .15s, border-color .15s;
 }
-.btn-icon:hover       { background: var(--accent); border-color: var(--accent); color: white; }
+.btn-icon:hover            { background: var(--accent); border-color: var(--accent); color: white; }
 .btn-icon.btn-delete:hover { background: var(--color-critical); border-color: var(--color-critical); }
+.btn-icon.btn-icon-add     { color: var(--accent); border-color: var(--accent); font-size: 1.1rem; }
+.btn-icon.btn-icon-add:hover { background: var(--accent); color: white; }
 
 .table-empty {
   text-align: center;
@@ -535,6 +536,20 @@ tbody td {
   letter-spacing: .06em;
   margin-bottom: .4rem;
 }
+.field-readonly {
+  width: 100%;
+  background: var(--bg-secondary, #0f172a);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 6px;
+  padding: .6rem .85rem;
+  font-size: .9rem;
+  font-family: inherit;
+  min-height: 2.5rem;
+  display: flex;
+  align-items: center;
+}
+
 .form-group input,
 .form-group textarea {
   width: 100%;

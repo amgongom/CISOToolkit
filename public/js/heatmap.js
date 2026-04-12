@@ -19,7 +19,7 @@ async function loadData() {
   allData = await res.json();
 
   allData.forEach(fn => fn.categories.forEach(cat => cat.subcategories.forEach(s => {
-    subById[s.id] = s;
+    subById[s.id] = { ...s, fnName: fn.name, fnCode: fn.code, catName: cat.name, catCode: cat.code };
   })));
 
   updateStats();
@@ -227,7 +227,12 @@ function bindModal() {
 }
 
 function updateCmmiHint() {
-  const v = parseFloat(document.getElementById('kri_valoracion').value);
+  const input = document.getElementById('kri_valoracion');
+  let v = parseFloat(input.value);
+  if (!isNaN(v)) {
+    if (v > 100) { v = 100; input.value = '100'; }
+    if (v < 0)   { v = 0;   input.value = '0'; }
+  }
   const hint = document.getElementById('cmmiLevelHint');
   if (isNaN(v)) { hint.textContent = ''; return; }
   hint.textContent = cmmiLevelName(v);
@@ -236,8 +241,10 @@ function updateCmmiHint() {
 
 function openModal(sub) {
   editingSubId = sub.id;
-  document.getElementById('modalSubCode').textContent     = sub.code;
-  document.getElementById('modalSubDesc').textContent     = sub.description;
+  document.getElementById('fieldFuncion').textContent      = `${sub.fnName} (${sub.fnCode})`;
+  document.getElementById('fieldCategoria').textContent   = `${sub.catName} (${sub.catCode})`;
+  document.getElementById('fieldSubcategoria').textContent = sub.code;
+  document.getElementById('fieldDescripcion').textContent = sub.description;
   document.getElementById('kri_name').value               = sub.kri_name        || '';
   document.getElementById('kri_description').value        = sub.kri_description || '';
   document.getElementById('kri_formula').value            = sub.kri_formula     || '';
