@@ -168,6 +168,25 @@
   </div>
 </div>
 
+<!-- Drilldown Modal -->
+<div class="modal-overlay hidden" id="drilldownModal">
+  <div class="modal" style="max-width:820px">
+    <div class="modal-header">
+      <div class="modal-title">
+        <h2 id="ddTitle">—</h2>
+        <p id="ddSubtitle" style="color:var(--text-muted);font-size:.85rem;margin-top:.2rem"></p>
+      </div>
+      <button class="modal-close" id="ddClose">✕</button>
+    </div>
+    <div class="modal-body" style="padding:0;max-height:75vh;overflow-y:auto">
+      <div id="ddContent" style="padding:.25rem 0"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" id="ddCancel">Cerrar</button>
+    </div>
+  </div>
+</div>
+
 <script src="/js/common.js"></script>
 <script src="/js/heatmap.js"></script>
 </body>

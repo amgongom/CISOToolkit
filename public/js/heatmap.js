@@ -3,6 +3,7 @@
 
 let allData      = [];
 let subById      = {};
+let catById      = {};   // catCode → category object (with id, name, fnName, fnCode)
 let echartsInst  = null;
 let editingSubId = null;
 let editingKriId = null;
@@ -19,9 +20,12 @@ async function loadData() {
   const res = await fetch('/api/heatmap');
   allData = await res.json();
 
-  allData.forEach(fn => fn.categories.forEach(cat => cat.subcategories.forEach(s => {
-    subById[s.id] = { ...s, fnName: fn.name, fnCode: fn.code, catName: cat.name, catCode: cat.code };
-  })));
+  allData.forEach(fn => fn.categories.forEach(cat => {
+    catById[cat.code] = { ...cat, fnName: fn.name, fnCode: fn.code };
+    cat.subcategories.forEach(s => {
+      subById[s.id] = { ...s, fnName: fn.name, fnCode: fn.code, catName: cat.name, catCode: cat.code };
+    });
+  }));
 
   updateStats();
   renderTreemap();
@@ -79,6 +83,7 @@ function buildTreeData() {
     id:         fn.code,
     name:       `${fn.name}  ·  ${fn.code}`,
     label_full: fn.name,
+    type:       'function',
     value:      fn.totalSubcategories,
     valoracion: fn.avgValoracion,
     itemStyle:  { color: cmmiColor(fn.avgValoracion) },
@@ -86,6 +91,8 @@ function buildTreeData() {
       id:         cat.code,
       name:       `${cat.name}  ·  ${cat.code}`,
       label_full: cat.name,
+      type:       'category',
+      catCode:    cat.code,
       value:      cat.totalSubcategories,
       valoracion: cat.avgValoracion,
       itemStyle:  { color: cmmiColor(cat.avgValoracion) },
@@ -93,6 +100,7 @@ function buildTreeData() {
         id:         `sub_${s.id}`,
         name:       s.code,
         label_full: s.kri_name || '',
+        type:       'subcategory',
         value:      1,
         valoracion: s.valoracion,
         subId:      s.id,
@@ -195,17 +203,19 @@ function renderTreemap() {
 
   echartsInst.setOption(option);
 
-  // Click: subcategoría (hoja) → modal | función/categoría → drill-down
+  // Click routing by node type
   echartsInst.on('click', (params) => {
     if (!params.data) return;
-    if (params.data.subId) {
-      const sub = subById[params.data.subId];
-      if (sub) openModal(sub);
+    const d = params.data;
+    if (d.type === 'subcategory') {
+      const sub = subById[d.subId];
+      if (sub) openSubcategoryDrilldown(sub);
     } else {
+      // function or category → zoom into treemap
       echartsInst.dispatchAction({
         type:         'treemapZoomToNode',
         seriesIndex:  0,
-        targetNodeId: params.data.id,
+        targetNodeId: d.id,
       });
     }
   });
@@ -225,6 +235,14 @@ function bindModal() {
     if (e.target === e.currentTarget) closeModal();
   });
   document.getElementById('kri_valoracion').addEventListener('input', updateCmmiHint);
+
+  // Drilldown modal
+  const closeDd = () => document.getElementById('drilldownModal').classList.add('hidden');
+  document.getElementById('ddClose').addEventListener('click', closeDd);
+  document.getElementById('ddCancel').addEventListener('click', closeDd);
+  document.getElementById('drilldownModal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeDd();
+  });
 }
 
 function updateCmmiHint() {
@@ -340,5 +358,126 @@ async function deleteKri() {
     await loadData();
   } catch {
     toast('Error al eliminar', 'error');
+  }
+}
+
+// ── Subcategory Drilldown ─────────────────────────────────────────────────────
+async function openSubcategoryDrilldown(sub) {
+  const modal   = document.getElementById('drilldownModal');
+  const content = document.getElementById('ddContent');
+  document.getElementById('ddTitle').textContent    = 'KRIs de Subcategoría';
+  document.getElementById('ddSubtitle').textContent = '';
+
+  // Context fields (función / categoría / subcategoría)
+  const contextBox = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem .75rem;padding:.75rem 1rem;background:var(--surface);border-bottom:1px solid var(--border)">
+      <div class="form-group" style="margin:0">
+        <label style="font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Función</label>
+        <div class="field-readonly">${sub.fnCode} · ${sub.fnName}</div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Categoría</label>
+        <div class="field-readonly">${sub.catCode} · ${sub.catName}</div>
+      </div>
+      <div class="form-group" style="margin:0;grid-column:1/-1">
+        <label style="font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Subcategoría</label>
+        <div class="field-readonly" style="display:flex;gap:.75rem;align-items:baseline">
+          <span style="font-weight:700;white-space:nowrap">${sub.code}</span>
+          <span style="font-size:.82rem;color:var(--text-muted)">${sub.description}</span>
+        </div>
+      </div>
+    </div>`;
+
+  // Add KRI button
+  const addBtn = `
+    <div style="padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;justify-content:flex-end">
+      <button class="btn-icon btn-icon-add" onclick="ddAddKri(${sub.id})" title="Agregar KRI">＋</button>
+    </div>`;
+
+  content.innerHTML = contextBox + '<div style="padding:1.5rem;text-align:center;color:var(--text-muted)">Cargando...</div>';
+  modal.classList.remove('hidden');
+
+  try {
+    const res  = await fetch(`/api/kris?subcategoryId=${sub.id}`);
+    const rows = await res.json();
+    const kris = rows.filter(r => r.kri_id);
+
+    if (!kris.length) {
+      content.innerHTML = contextBox + addBtn + `
+        <div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-style:italic">
+          Sin KRIs asignados
+        </div>`;
+      return;
+    }
+
+    const rowsHtml = kris.map(k => {
+      const val = k.valoracion != null ? Number(k.valoracion).toFixed(1) : '—';
+      const cls = k.valoracion != null ? kriClass(k.valoracion) : 'nodata';
+      const lvl = k.valoracion != null ? cmmiLevel(k.valoracion) : '—';
+      const desc = k.kri_description
+        ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">${k.kri_description}</div>` : '';
+      const formula = k.kri_formula
+        ? `<div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem;font-style:italic">Fórmula: ${k.kri_formula}</div>` : '';
+      return `
+        <tr>
+          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border)">
+            <div style="font-weight:600;font-size:.88rem">${k.kri_name}</div>
+            ${desc}${formula}
+          </td>
+          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:center;font-weight:700;font-size:1rem;color:var(--color-${cls});white-space:nowrap">
+            ${val}
+          </td>
+          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:center;font-size:.8rem;white-space:nowrap">
+            ${lvl}
+          </td>
+          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:center">
+            <button class="btn-icon" onclick="ddEditKri(${sub.id}, ${k.kri_id})" title="Editar">✎</button>
+          </td>
+        </tr>`;
+    }).join('');
+
+    content.innerHTML = contextBox + addBtn + `
+      <table style="width:100%;border-collapse:collapse;font-size:.88rem">
+        <thead>
+          <tr style="background:var(--surface);border-bottom:2px solid var(--border)">
+            <th style="padding:.5rem .75rem;text-align:left">KRI</th>
+            <th style="padding:.5rem .75rem;text-align:center">Valor</th>
+            <th style="padding:.5rem .75rem;text-align:center">CMMI</th>
+            <th style="padding:.5rem .75rem;text-align:center">Acc.</th>
+          </tr>
+        </thead>
+        <tbody>${rowsHtml}</tbody>
+      </table>`;
+
+  } catch (e) {
+    content.innerHTML = `<div style="padding:1.5rem;color:var(--color-n1)">Error: ${e.message}</div>`;
+  }
+}
+
+function ddAddKri(subcategoryId) {
+  document.getElementById('drilldownModal').classList.add('hidden');
+  const sub = subById[subcategoryId];
+  if (sub) openModal({ ...sub, kri_id: null, kri_name: '', kri_description: '', kri_formula: '', cmmi_flag: '', valoracion: null });
+}
+
+async function ddEditKri(subcategoryId, kriId) {
+  document.getElementById('drilldownModal').classList.add('hidden');
+  const base = subById[subcategoryId];
+  if (!base) return;
+  try {
+    const res  = await fetch(`/api/kris?subcategoryId=${subcategoryId}`);
+    const rows = await res.json();
+    const kri  = rows.find(r => r.kri_id === kriId);
+    openModal(kri ? {
+      ...base,
+      kri_id:          kri.kri_id,
+      kri_name:        kri.kri_name,
+      kri_description: kri.kri_description,
+      kri_formula:     kri.kri_formula,
+      cmmi_flag:       kri.cmmi_flag,
+      valoracion:      kri.valoracion,
+    } : { ...base, kri_id: kriId });
+  } catch {
+    openModal({ ...base, kri_id: kriId });
   }
 }

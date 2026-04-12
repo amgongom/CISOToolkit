@@ -409,7 +409,7 @@ tbody td {
 .td-kri { max-width: 220px; font-size: .82rem; }
 .td-value { text-align: center; font-weight: 700; }
 .td-date  { color: var(--text-muted); font-size: .8rem; }
-.td-actions { text-align: center; }
+.td-actions { text-align: center; white-space: nowrap; min-width: 90px; }
 
 .kri-badge {
   display: inline-block;
