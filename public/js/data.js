@@ -56,8 +56,8 @@ function toggleExamples() {
   btn.textContent = showExamples ? '⊟ Ocultar ejemplos' : '⊞ Mostrar ejemplos';
   // Toggle th
   document.querySelector('thead th:nth-child(4)').style.display = showExamples ? '' : 'none';
-  // Toggle td in every row (4th cell of sub-header rows)
-  document.querySelectorAll('tbody tr.sub-header-row td:nth-child(4)').forEach(td => {
+  // Toggle td in every row (4th cell of all rows)
+  document.querySelectorAll('tbody tr td:nth-child(4)').forEach(td => {
     td.style.display = showExamples ? '' : 'none';
   });
 }
@@ -138,71 +138,70 @@ function renderTable(rows) {
   document.querySelector('thead th:nth-child(4)').style.display = showExamples ? '' : 'none';
 
   groups.forEach(({ sub, kris }) => {
-    // ── Sub group header row ──────────────────────────────────────────────────
-    const subTr = document.createElement('tr');
-    subTr.className = 'sub-header-row';
-    subTr.innerHTML = `
-      <td><span style="font-size:.82rem">${sub.function_name} <span style="font-family:monospace;font-weight:700;color:var(--accent)">(${sub.function_code})</span></span></td>
-      <td><span style="font-size:.82rem">${sub.category_name} <span class="td-code">(${sub.category_code})</span></span></td>
-      <td style="font-size:.82rem">
-        <span class="td-code">${sub.code}</span>
-        <div style="color:var(--text-muted);font-size:.78rem;line-height:1.4;margin-top:.2rem">${sub.description}</div>
-      </td>
-      <td style="text-align:center">
-        <button class="btn-ex-link" title="Ver ejemplos de implementación">Cargando…</button>
-      </td>
-      <td style="color:var(--text-muted);font-size:.8rem;font-style:italic">
-        ${kris.length === 0
-          ? '<span class="no-data-text">Sin KRI asignado</span>'
-          : `${kris.length} KRI${kris.length > 1 ? 's' : ''}`}
-      </td>
-      <td></td>
-      <td></td>
-      <td></td>
-      <td class="td-actions">
-        <button class="btn-icon btn-icon-add" title="Agregar KRI">＋</button>
-      </td>
-    `;
+    const rowCount = Math.max(kris.length, 1);
 
-    const exBtn = subTr.querySelector('.btn-ex-link');
-    fetchExamples(sub.subcategory_id).then(exs => {
-      exBtn.textContent = exs.length ? `${exs.length} ejemplo${exs.length > 1 ? 's' : ''}` : 'Sin ejemplos';
-      exBtn.disabled = exs.length === 0;
-    });
-    exBtn.addEventListener('click', () => openExamplesModal(sub.subcategory_id, sub.code, sub.description));
-    subTr.querySelector('.btn-icon-add').addEventListener('click', () => openModal(sub, null));
-    if (!showExamples) subTr.querySelector('td:nth-child(4)').style.display = 'none';
-    tbody.appendChild(subTr);
+    for (let i = 0; i < rowCount; i++) {
+      const kri     = kris[i] || null;
+      const cls     = kri ? kriClass(kri.valoracion) : null;
+      const level   = kri ? cmmiLevel(kri.valoracion) : null;
+      const isFirst = i === 0;
+      const tr      = document.createElement('tr');
 
-    // ── KRI rows ──────────────────────────────────────────────────────────────
-    kris.forEach(kri => {
-      const cls   = kriClass(kri.valoracion);
-      const level = cmmiLevel(kri.valoracion);
-      const kriTr = document.createElement('tr');
-      kriTr.className = 'kri-data-row';
-      kriTr.innerHTML = `
-        <td></td><td></td><td></td><td></td>
-        <td class="td-kri" style="border-left:3px solid var(--accent);padding-left:1rem">${truncate(kri.kri_name, 80)}</td>
+      // Columns 1-4: show subcategory info only on first row, blank on subsequent
+      const subCells = isFirst ? `
+        <td><span style="font-size:.82rem">${sub.function_name} <span style="font-family:monospace;font-weight:700;color:var(--accent)">(${sub.function_code})</span></span></td>
+        <td><span style="font-size:.82rem">${sub.category_name} <span class="td-code">(${sub.category_code})</span></span></td>
+        <td style="font-size:.82rem">
+          <span class="td-code">${sub.code}</span>
+          <div style="color:var(--text-muted);font-size:.78rem;line-height:1.4;margin-top:.2rem">${sub.description}</div>
+        </td>
         <td style="text-align:center">
-          <span class="kri-badge ${cls}">${Number(kri.valoracion).toFixed(1)}</span>
+          <button class="btn-ex-link" title="Ver ejemplos de implementación">Cargando…</button>
+        </td>` : `
+        <td style="border-top:none;padding-top:0;padding-bottom:0"></td>
+        <td style="border-top:none;padding-top:0;padding-bottom:0"></td>
+        <td style="border-top:none;padding-top:0;padding-bottom:0"></td>
+        <td style="border-top:none;padding-top:0;padding-bottom:0"></td>`;
+
+      tr.innerHTML = `
+        ${subCells}
+        <td class="td-kri">${kri ? truncate(kri.kri_name, 80) : '<span class="no-data-text">—</span>'}</td>
+        <td style="text-align:center">
+          ${kri ? `<span class="kri-badge ${cls}">${Number(kri.valoracion).toFixed(1)}</span>` : '<span class="no-data-text">—</span>'}
         </td>
         <td style="text-align:center;font-size:.82rem">
-          <span style="color:var(--color-${cls});font-weight:600">${level}</span>
+          ${level ? `<span style="color:var(--color-${cls});font-weight:600">${level}</span>` : '<span class="no-data-text">—</span>'}
         </td>
         <td style="text-align:center;font-size:.78rem">
-          ${kri.last_saved_at
+          ${kri?.last_saved_at
             ? `<span style="color:var(--text)">${formatDateTime(kri.last_saved_at)}</span><br><span style="color:var(--text-muted)">${kri.last_saved_by}</span>`
             : '<span class="no-data-text">—</span>'}
         </td>
         <td class="td-actions">
-          <button class="btn-icon" title="Editar KRI" style="margin-right:.25rem">✎</button>
-          <button class="btn-icon btn-icon-del" title="Eliminar KRI">🗑</button>
+          ${isFirst ? `<button class="btn-icon btn-icon-add" title="Agregar KRI" style="margin-right:.25rem">＋</button>` : ''}
+          ${kri ? `<button class="btn-icon" title="Editar KRI" style="margin-right:.25rem">✎</button>
+                   <button class="btn-icon btn-icon-del" title="Eliminar KRI">🗑</button>` : ''}
         </td>
       `;
-      kriTr.querySelector('.btn-icon[title="Editar KRI"]').addEventListener('click', () => openModal(sub, kri));
-      kriTr.querySelector('.btn-icon-del').addEventListener('click', () => confirmDeleteKri(kri.kri_id));
-      tbody.appendChild(kriTr);
-    });
+
+      if (!showExamples) tr.querySelector('td:nth-child(4)').style.display = 'none';
+
+      if (isFirst) {
+        const exBtn = tr.querySelector('.btn-ex-link');
+        fetchExamples(sub.subcategory_id).then(exs => {
+          exBtn.textContent = exs.length ? `${exs.length} ejemplo${exs.length > 1 ? 's' : ''}` : 'Sin ejemplos';
+          exBtn.disabled = exs.length === 0;
+        });
+        exBtn.addEventListener('click', () => openExamplesModal(sub.subcategory_id, sub.code, sub.description));
+        tr.querySelector('.btn-icon-add').addEventListener('click', () => openModal(sub, null));
+      }
+      if (kri) {
+        tr.querySelector('.btn-icon[title="Editar KRI"]').addEventListener('click', () => openModal(sub, kri));
+        tr.querySelector('.btn-icon-del').addEventListener('click', () => confirmDeleteKri(kri.kri_id));
+      }
+
+      tbody.appendChild(tr);
+    }
   });
 }
 

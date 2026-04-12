@@ -388,15 +388,6 @@ tbody tr {
   transition: background .1s;
 }
 tbody tr:hover { background: var(--surface); }
-tbody tr.sub-header-row {
-  background: rgba(15, 23, 42, 0.6);
-  border-top: 2px solid var(--border);
-}
-tbody tr.sub-header-row:hover { background: rgba(15, 23, 42, 0.8); }
-tbody tr.kri-data-row td:nth-child(-n+4) {
-  border-bottom: none;
-  padding: 0;
-}
 .btn-icon-del { color: var(--color-n1); border-color: var(--color-n1); }
 .btn-icon-del:hover { background: var(--color-n1) !important; border-color: var(--color-n1) !important; color: white !important; }
 tbody td {
