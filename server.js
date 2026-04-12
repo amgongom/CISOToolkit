@@ -138,6 +138,43 @@ db.exec(`
     `);
     console.log('[M3] Done.');
   }
+
+  // M4: remove UNIQUE constraint from kris.subcategory_id (allow multiple KRIs per subcategory)
+  const krisSQL = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='kris'").get()?.sql || '';
+  if (krisSQL.includes('UNIQUE')) {
+    console.log('[M4] Removing UNIQUE constraint from kris.subcategory_id...');
+    db.exec(`
+      CREATE TABLE kris_new (
+        id               INTEGER PRIMARY KEY AUTOINCREMENT,
+        subcategory_id   INTEGER NOT NULL REFERENCES subcategories(id),
+        kri_name         TEXT,
+        kri_description  TEXT,
+        kri_formula      TEXT,
+        cmmi_flag        TEXT CHECK(cmmi_flag IN ('POSITIVO','NEGATIVO')),
+        cmmi_levels      TEXT,
+        valoracion       REAL CHECK(valoracion >= 0 AND valoracion <= 100),
+        updated_at       TEXT DEFAULT (datetime('now'))
+      );
+      INSERT INTO kris_new SELECT * FROM kris;
+      DROP TABLE kris;
+      ALTER TABLE kris_new RENAME TO kris;
+    `);
+    console.log('[M4] Done.');
+  }
+
+  // M4b: add kri_id to kri_history + backfill
+  const histCols = db.prepare("PRAGMA table_info(kri_history)").all().map(c => c.name);
+  if (!histCols.includes('kri_id')) {
+    console.log('[M4b] Adding kri_id to kri_history...');
+    db.exec('ALTER TABLE kri_history ADD COLUMN kri_id INTEGER REFERENCES kris(id)');
+    db.exec(`
+      UPDATE kri_history SET kri_id = (
+        SELECT id FROM kris WHERE kris.subcategory_id = kri_history.subcategory_id
+        ORDER BY id ASC LIMIT 1
+      ) WHERE kri_id IS NULL
+    `);
+    console.log('[M4b] Done.');
+  }
 })();
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
@@ -918,7 +955,9 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
            k.cmmi_flag, k.cmmi_levels,
            k.valoracion
     FROM subcategories s
-    LEFT JOIN kris k ON k.subcategory_id = s.id
+    LEFT JOIN kris k ON k.id = (
+      SELECT id FROM kris WHERE subcategory_id = s.id ORDER BY id DESC LIMIT 1
+    )
     ORDER BY s.code
   `).all();
 
@@ -964,10 +1003,10 @@ app.get('/api/kris', requireAuth, (req, res) => {
     JOIN functions f ON c.function_id = f.id
     LEFT JOIN kris k ON k.subcategory_id = s.id
     LEFT JOIN (
-      SELECT subcategory_id, saved_by, saved_at
+      SELECT kri_id, saved_by, saved_at
       FROM kri_history
-      WHERE id IN (SELECT MAX(id) FROM kri_history GROUP BY subcategory_id)
-    ) h ON h.subcategory_id = s.id
+      WHERE id IN (SELECT MAX(id) FROM kri_history GROUP BY kri_id)
+    ) h ON h.kri_id = k.id
     WHERE 1=1
   `;
   const params = [];
@@ -979,13 +1018,14 @@ app.get('/api/kris', requireAuth, (req, res) => {
     const q = `%${search}%`;
     params.push(q, q, q, q);
   }
-  sql += ' ORDER BY s.code';
+  sql += ' ORDER BY s.code, k.id';
   res.json(db.prepare(sql).all(...params));
 });
 
+// POST → create or update a KRI (kri_id in body = update, absent = create)
 app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
   const { subcategoryId } = req.params;
-  const { kri_name, kri_description, kri_formula, cmmi_flag, cmmi_levels, valoracion } = req.body;
+  const { kri_id, kri_name, kri_description, kri_formula, cmmi_flag, cmmi_levels, valoracion } = req.body;
 
   if (!kri_name) return res.status(400).json({ error: 'kri_name es requerido' });
   const v = parseFloat(valoracion);
@@ -993,44 +1033,68 @@ app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
     return res.status(400).json({ error: 'valoracion debe estar entre 0 y 100' });
 
   try {
-    db.prepare(`
-      INSERT INTO kris (subcategory_id, kri_name, kri_description, kri_formula,
-                        cmmi_flag, cmmi_levels, valoracion)
-      VALUES (?,?,?,?,?,?,?)
-      ON CONFLICT(subcategory_id) DO UPDATE SET
-        kri_name=excluded.kri_name, kri_description=excluded.kri_description,
-        kri_formula=excluded.kri_formula, cmmi_flag=excluded.cmmi_flag,
-        cmmi_levels=excluded.cmmi_levels, valoracion=excluded.valoracion,
-        updated_at=datetime('now')
-    `).run(subcategoryId, kri_name, kri_description||null, kri_formula||null,
-           cmmi_flag||null, cmmi_levels||null, v);
+    if (kri_id) {
+      // UPDATE existing KRI
+      const existing = db.prepare('SELECT id FROM kris WHERE id = ?').get(kri_id);
+      if (!existing) return res.status(404).json({ error: 'KRI no encontrado' });
 
-    // Record history entry
-    db.prepare(`
-      INSERT INTO kri_history (subcategory_id, valoracion, saved_by)
-      VALUES (?, ?, ?)
-    `).run(subcategoryId, v, req.session.username);
+      db.prepare(`
+        UPDATE kris SET kri_name=?, kri_description=?, kri_formula=?,
+                        cmmi_flag=?, cmmi_levels=?, valoracion=?, updated_at=datetime('now')
+        WHERE id=?
+      `).run(kri_name, kri_description||null, kri_formula||null,
+             cmmi_flag||null, cmmi_levels||null, v, kri_id);
 
-    res.json({ ok: true });
+      db.prepare(`
+        INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by)
+        VALUES (?, ?, ?, ?)
+      `).run(subcategoryId, kri_id, v, req.session.username);
+
+      res.json({ ok: true, kri_id });
+    } else {
+      // INSERT new KRI
+      const result = db.prepare(`
+        INSERT INTO kris (subcategory_id, kri_name, kri_description, kri_formula,
+                          cmmi_flag, cmmi_levels, valoracion)
+        VALUES (?,?,?,?,?,?,?)
+      `).run(subcategoryId, kri_name, kri_description||null, kri_formula||null,
+             cmmi_flag||null, cmmi_levels||null, v);
+
+      const newKriId = result.lastInsertRowid;
+      db.prepare(`
+        INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by)
+        VALUES (?, ?, ?, ?)
+      `).run(subcategoryId, newKriId, v, req.session.username);
+
+      res.json({ ok: true, kri_id: newKriId });
+    }
   } catch (e) {
     res.status(500).json({ error: e.message });
   }
 });
 
-app.get('/api/kris/:subcategoryId/history', requireAuth, (req, res) => {
+// GET history by kri id
+app.get('/api/kris/:kriId/history', requireAuth, (req, res) => {
   const rows = db.prepare(`
     SELECT valoracion, saved_by, saved_at
     FROM kri_history
-    WHERE subcategory_id = ?
+    WHERE kri_id = ?
     ORDER BY saved_at DESC
     LIMIT 50
-  `).all(req.params.subcategoryId);
+  `).all(req.params.kriId);
   res.json(rows);
 });
 
-app.delete('/api/kris/:subcategoryId', requireAuth, (req, res) => {
-  db.prepare('DELETE FROM kris WHERE subcategory_id = ?').run(req.params.subcategoryId);
-  res.json({ ok: true });
+// DELETE by kri id
+app.delete('/api/kris/:kriId', requireAuth, (req, res) => {
+  const { kriId } = req.params;
+  try {
+    db.prepare('DELETE FROM kri_history WHERE kri_id = ?').run(kriId);
+    db.prepare('DELETE FROM kris WHERE id = ?').run(kriId);
+    res.json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
 });
 
 // ─── Redirect root ────────────────────────────────────────────────────────────

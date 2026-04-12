@@ -5,6 +5,7 @@ let allRows = [];
 let functions = [];
 let categories = [];
 let editingSubId = null;
+let editingKriId = null;
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
@@ -38,12 +39,27 @@ async function loadRows() {
 }
 
 // ── Filters ───────────────────────────────────────────────────────────────────
+let showExamples = true;
+
 function bindFilters() {
   document.getElementById('filterFunction').addEventListener('change', onFunctionChange);
   document.getElementById('filterCategory').addEventListener('change', applyFilters);
   document.getElementById('filterKri').addEventListener('change', applyFilters);
   document.getElementById('filterSearch').addEventListener('input', applyFilters);
   document.getElementById('btnReset').addEventListener('click', resetFilters);
+  document.getElementById('btnToggleExamples').addEventListener('click', toggleExamples);
+}
+
+function toggleExamples() {
+  showExamples = !showExamples;
+  const btn = document.getElementById('btnToggleExamples');
+  btn.textContent = showExamples ? '⊟ Ocultar ejemplos' : '⊞ Mostrar ejemplos';
+  // Toggle th
+  document.querySelector('thead th:nth-child(4)').style.display = showExamples ? '' : 'none';
+  // Toggle td in every row (4th cell of sub-header rows)
+  document.querySelectorAll('tbody tr.sub-header-row td:nth-child(4)').forEach(td => {
+    td.style.display = showExamples ? '' : 'none';
+  });
 }
 
 function onFunctionChange() {
@@ -67,6 +83,9 @@ function applyFilters() {
   const kriFilter = document.getElementById('filterKri').value;
   const search    = document.getElementById('filterSearch').value.toLowerCase().trim();
 
+  // Filter at subcategory level — include row if subcategory matches
+  // For "with KRI": include subcategory if at least one KRI row exists
+  // For "without": include only subcategories with no KRI (kri_id === null)
   const filtered = allRows.filter(r => {
     if (fnId  && String(r.function_id) !== String(fnId))   return false;
     if (catId && String(r.category_id) !== String(catId))  return false;
@@ -79,9 +98,13 @@ function applyFilters() {
     return true;
   });
 
+  // Count unique subcategories for the result counter
+  const uniqueSubs = new Set(filtered.map(r => r.subcategory_id)).size;
+  const totalSubs  = new Set(allRows.map(r => r.subcategory_id)).size;
+
   renderTable(filtered);
   document.getElementById('resultCount').textContent =
-    `Mostrando ${filtered.length} de ${allRows.length} subcategorías`;
+    `Mostrando ${uniqueSubs} de ${totalSubs} subcategorías`;
 }
 
 function resetFilters() {
@@ -100,57 +123,86 @@ function renderTable(rows) {
     return;
   }
 
-  tbody.innerHTML = '';
+  // Group rows by subcategory_id preserving order
+  const groups = [];
+  const groupMap = {};
   rows.forEach(r => {
-    const hasKri = r.kri_id !== null;
-    const cls    = kriClass(r.valoracion);
-    const level  = cmmiLevel(r.valoracion);
-    const tr = document.createElement('tr');
-    tr.innerHTML = `
-      <td><span style="font-size:.82rem">${r.function_name} <span style="font-family:monospace;font-weight:700;color:var(--accent)">(${r.function_code})</span></span></td>
-      <td><span style="font-size:.82rem">${r.category_name} <span class="td-code">(${r.category_code})</span></span></td>
+    if (!groupMap[r.subcategory_id]) {
+      groupMap[r.subcategory_id] = { sub: r, kris: [] };
+      groups.push(groupMap[r.subcategory_id]);
+    }
+    if (r.kri_id !== null) groupMap[r.subcategory_id].kris.push(r);
+  });
+
+  tbody.innerHTML = '';
+  document.querySelector('thead th:nth-child(4)').style.display = showExamples ? '' : 'none';
+
+  groups.forEach(({ sub, kris }) => {
+    // ── Sub group header row ──────────────────────────────────────────────────
+    const subTr = document.createElement('tr');
+    subTr.className = 'sub-header-row';
+    subTr.innerHTML = `
+      <td><span style="font-size:.82rem">${sub.function_name} <span style="font-family:monospace;font-weight:700;color:var(--accent)">(${sub.function_code})</span></span></td>
+      <td><span style="font-size:.82rem">${sub.category_name} <span class="td-code">(${sub.category_code})</span></span></td>
       <td style="font-size:.82rem">
-        <span class="td-code">${r.code}</span>
-        <div style="color:var(--text-muted);font-size:.78rem;line-height:1.4;margin-top:.2rem">${r.description}</div>
+        <span class="td-code">${sub.code}</span>
+        <div style="color:var(--text-muted);font-size:.78rem;line-height:1.4;margin-top:.2rem">${sub.description}</div>
       </td>
       <td style="text-align:center">
-        <button class="btn-ex-link" data-sub-id="${r.subcategory_id}" title="Ver ejemplos de implementación">
-          Cargando…
-        </button>
+        <button class="btn-ex-link" title="Ver ejemplos de implementación">Cargando…</button>
       </td>
-      <td class="td-kri">${hasKri ? truncate(r.kri_name, 80) : '<span class="no-data-text">Sin KRI</span>'}</td>
-      <td style="text-align:center">
-        ${hasKri
-          ? `<span class="kri-badge ${cls}">${Number(r.valoracion).toFixed(1)}</span>`
-          : '<span class="no-data-text">—</span>'}
+      <td style="color:var(--text-muted);font-size:.8rem;font-style:italic">
+        ${kris.length === 0
+          ? '<span class="no-data-text">Sin KRI asignado</span>'
+          : `${kris.length} KRI${kris.length > 1 ? 's' : ''}`}
       </td>
-      <td style="text-align:center;font-size:.82rem">
-        ${level ? `<span style="color:var(--color-${cls});font-weight:600">${level}</span>` : '<span class="no-data-text">—</span>'}
-      </td>
-      <td style="text-align:center;font-size:.78rem">
-        ${r.last_saved_at
-          ? `<span style="color:var(--text)">${formatDateTime(r.last_saved_at)}</span><br><span style="color:var(--text-muted)">${r.last_saved_by}</span>`
-          : '<span class="no-data-text">—</span>'}
-      </td>
+      <td></td>
+      <td></td>
+      <td></td>
       <td class="td-actions">
-        ${hasKri
-          ? `<button class="btn-icon" title="Editar KRI"   data-id="${r.subcategory_id}">✎</button>`
-          : `<button class="btn-icon btn-icon-add" title="Agregar KRI" data-id="${r.subcategory_id}">＋</button>`}
+        <button class="btn-icon btn-icon-add" title="Agregar KRI">＋</button>
       </td>
     `;
 
-    // Resolve examples count and update button label
-    const exBtn = tr.querySelector('.btn-ex-link');
-    fetchExamples(r.subcategory_id).then(exs => {
+    const exBtn = subTr.querySelector('.btn-ex-link');
+    fetchExamples(sub.subcategory_id).then(exs => {
       exBtn.textContent = exs.length ? `${exs.length} ejemplo${exs.length > 1 ? 's' : ''}` : 'Sin ejemplos';
       exBtn.disabled = exs.length === 0;
     });
-    exBtn.addEventListener('click', () => openExamplesModal(
-      r.subcategory_id, r.code, r.description
-    ));
+    exBtn.addEventListener('click', () => openExamplesModal(sub.subcategory_id, sub.code, sub.description));
+    subTr.querySelector('.btn-icon-add').addEventListener('click', () => openModal(sub, null));
+    if (!showExamples) subTr.querySelector('td:nth-child(4)').style.display = 'none';
+    tbody.appendChild(subTr);
 
-    tr.querySelector('.btn-icon[data-id]').addEventListener('click', () => openModal(r));
-    tbody.appendChild(tr);
+    // ── KRI rows ──────────────────────────────────────────────────────────────
+    kris.forEach(kri => {
+      const cls   = kriClass(kri.valoracion);
+      const level = cmmiLevel(kri.valoracion);
+      const kriTr = document.createElement('tr');
+      kriTr.className = 'kri-data-row';
+      kriTr.innerHTML = `
+        <td></td><td></td><td></td><td></td>
+        <td class="td-kri" style="border-left:3px solid var(--accent);padding-left:1rem">${truncate(kri.kri_name, 80)}</td>
+        <td style="text-align:center">
+          <span class="kri-badge ${cls}">${Number(kri.valoracion).toFixed(1)}</span>
+        </td>
+        <td style="text-align:center;font-size:.82rem">
+          <span style="color:var(--color-${cls});font-weight:600">${level}</span>
+        </td>
+        <td style="text-align:center;font-size:.78rem">
+          ${kri.last_saved_at
+            ? `<span style="color:var(--text)">${formatDateTime(kri.last_saved_at)}</span><br><span style="color:var(--text-muted)">${kri.last_saved_by}</span>`
+            : '<span class="no-data-text">—</span>'}
+        </td>
+        <td class="td-actions">
+          <button class="btn-icon" title="Editar KRI" style="margin-right:.25rem">✎</button>
+          <button class="btn-icon btn-icon-del" title="Eliminar KRI">🗑</button>
+        </td>
+      `;
+      kriTr.querySelector('.btn-icon[title="Editar KRI"]').addEventListener('click', () => openModal(sub, kri));
+      kriTr.querySelector('.btn-icon-del').addEventListener('click', () => confirmDeleteKri(kri.kri_id));
+      tbody.appendChild(kriTr);
+    });
   });
 }
 
@@ -167,7 +219,6 @@ async function fetchExamples(subId) {
 
 function formatDateTime(isoStr) {
   if (!isoStr) return '—';
-  // SQLite datetime() returns "YYYY-MM-DD HH:MM:SS" (UTC)
   const d = new Date(isoStr.replace(' ', 'T') + 'Z');
   return d.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
 }
@@ -243,27 +294,30 @@ function updateCmmiHint() {
   hint.style.color = `var(--color-${kriClass(v)})`;
 }
 
-async function openModal(row) {
-  editingSubId = row.subcategory_id;
-  document.getElementById('modalTitle').textContent         = row.kri_id ? 'Editar KRI' : 'Agregar KRI';
-  document.getElementById('fieldFuncion').textContent       = `${row.function_name} (${row.function_code})`;
-  document.getElementById('fieldCategoria').textContent    = `${row.category_name} (${row.category_code})`;
-  document.getElementById('fieldSubcategoria').textContent = row.code;
-  document.getElementById('fieldDescripcion').textContent  = row.description;
-  document.getElementById('kri_name').value                = row.kri_name        || '';
-  document.getElementById('kri_description').value         = row.kri_description || '';
-  document.getElementById('kri_formula').value             = row.kri_formula     || '';
-  document.getElementById('kri_valoracion').value          = row.valoracion  != null ? Number(row.valoracion).toFixed(1)  : '';
-  document.getElementById('kri_cmmi_flag').value           = row.cmmi_flag       || '';
+// sub: subcategory context row | kri: existing KRI row or null (add new)
+async function openModal(sub, kri) {
+  editingSubId = sub.subcategory_id;
+  editingKriId = kri ? kri.kri_id : null;
+
+  document.getElementById('modalTitle').textContent         = kri ? 'Editar KRI' : 'Agregar KRI';
+  document.getElementById('fieldFuncion').textContent       = `${sub.function_name} (${sub.function_code})`;
+  document.getElementById('fieldCategoria').textContent    = `${sub.category_name} (${sub.category_code})`;
+  document.getElementById('fieldSubcategoria').textContent = sub.code;
+  document.getElementById('fieldDescripcion').textContent  = sub.description;
+  document.getElementById('kri_name').value                = kri?.kri_name        || '';
+  document.getElementById('kri_description').value         = kri?.kri_description || '';
+  document.getElementById('kri_formula').value             = kri?.kri_formula     || '';
+  document.getElementById('kri_valoracion').value          = kri?.valoracion != null ? Number(kri.valoracion).toFixed(1) : '';
+  document.getElementById('kri_cmmi_flag').value           = kri?.cmmi_flag       || '';
   updateCmmiHint();
 
-  document.getElementById('btnDeleteKri').style.display = row.kri_id ? '' : 'none';
+  document.getElementById('btnDeleteKri').style.display = kri ? '' : 'none';
 
-  // Load and show examples
+  // Load examples
   const exBox = document.getElementById('modalExamplesBox');
   const exEl  = document.getElementById('modalExamples');
   try {
-    const exs = await fetchExamples(row.subcategory_id);
+    const exs = await fetchExamples(sub.subcategory_id);
     if (exs.length) {
       exEl.innerHTML = exs.map(e => `<div style="margin-bottom:.4rem"><strong>Ex${e.number}:</strong> ${e.text}</div>`).join('');
       exBox.style.display = '';
@@ -272,17 +326,21 @@ async function openModal(row) {
     }
   } catch { exBox.style.display = 'none'; }
 
-  // Load history
-  loadHistory(row.subcategory_id);
+  // Load history (only when editing an existing KRI)
+  if (kri) {
+    loadHistory(kri.kri_id);
+  } else {
+    document.getElementById('kriHistoryBox').style.display = 'none';
+  }
 
   document.getElementById('kriModal').classList.remove('hidden');
 }
 
-async function loadHistory(subId) {
+async function loadHistory(kriId) {
   const box  = document.getElementById('kriHistoryBox');
   const list = document.getElementById('kriHistoryList');
   try {
-    const res  = await fetch(`/api/kris/${subId}/history`);
+    const res  = await fetch(`/api/kris/${kriId}/history`);
     const rows = await res.json();
     if (!rows.length) { box.style.display = 'none'; return; }
     box.style.display = '';
@@ -302,6 +360,7 @@ async function loadHistory(subId) {
 
 function closeModal() {
   editingSubId = null;
+  editingKriId = null;
   document.getElementById('kriModal').classList.add('hidden');
 }
 
@@ -313,6 +372,7 @@ async function saveKri() {
   if (isNaN(valoracion) || valoracion < 0 || valoracion > 100) { toast('La valoración debe estar entre 0 y 100', 'error'); return; }
 
   const body = {
+    kri_id:          editingKriId || undefined,
     kri_name,
     kri_description: document.getElementById('kri_description').value.trim(),
     kri_formula:     document.getElementById('kri_formula').value.trim(),
@@ -324,11 +384,16 @@ async function saveKri() {
   btn.disabled = true;
   try {
     const res = await fetch(`/api/kris/${editingSubId}`, {
-      method: 'POST',
+      method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body:    JSON.stringify(body)
     });
-    if (!res.ok) throw new Error((await res.json()).error);
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = `Error ${res.status}`;
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      throw new Error(msg);
+    }
     toast('KRI guardado');
     closeModal();
     await loadRows();
@@ -338,11 +403,24 @@ async function saveKri() {
 }
 
 async function deleteKri() {
-  if (!confirm('¿Eliminar el KRI de esta subcategoría?')) return;
+  if (!confirm('¿Eliminar este KRI?')) return;
   try {
-    await fetch(`/api/kris/${editingSubId}`, { method: 'DELETE' });
+    const res = await fetch(`/api/kris/${editingKriId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error);
     toast('KRI eliminado');
     closeModal();
+    await loadRows();
+  } catch {
+    toast('Error al eliminar', 'error');
+  }
+}
+
+async function confirmDeleteKri(kriId) {
+  if (!confirm('¿Eliminar este KRI?')) return;
+  try {
+    const res = await fetch(`/api/kris/${kriId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error);
+    toast('KRI eliminado');
     await loadRows();
   } catch {
     toast('Error al eliminar', 'error');

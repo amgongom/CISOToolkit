@@ -5,6 +5,7 @@ let allData      = [];
 let subById      = {};
 let echartsInst  = null;
 let editingSubId = null;
+let editingKriId = null;
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
@@ -241,6 +242,7 @@ function updateCmmiHint() {
 
 function openModal(sub) {
   editingSubId = sub.id;
+  editingKriId = sub.kri_id || null;
   document.getElementById('fieldFuncion').textContent      = `${sub.fnName} (${sub.fnCode})`;
   document.getElementById('fieldCategoria').textContent   = `${sub.catName} (${sub.catCode})`;
   document.getElementById('fieldSubcategoria').textContent = sub.code;
@@ -252,15 +254,16 @@ function openModal(sub) {
   document.getElementById('kri_cmmi_flag').value          = sub.cmmi_flag       || '';
   updateCmmiHint();
   document.getElementById('btnDeleteKri').style.display = sub.kri_id ? '' : 'none';
-  loadHeatmapHistory(sub.id);
+  if (sub.kri_id) loadHeatmapHistory(sub.kri_id);
+  else document.getElementById('kriHistoryBox').style.display = 'none';
   document.getElementById('kriModal').classList.remove('hidden');
 }
 
-async function loadHeatmapHistory(subId) {
+async function loadHeatmapHistory(kriId) {
   const box  = document.getElementById('kriHistoryBox');
   const list = document.getElementById('kriHistoryList');
   try {
-    const res  = await fetch(`/api/kris/${subId}/history`);
+    const res  = await fetch(`/api/kris/${kriId}/history`);
     const rows = await res.json();
     if (!rows.length) { box.style.display = 'none'; return; }
     box.style.display = '';
@@ -286,6 +289,7 @@ function formatHeatmapDateTime(isoStr) {
 
 function closeModal() {
   editingSubId = null;
+  editingKriId = null;
   document.getElementById('kriModal').classList.add('hidden');
 }
 
@@ -296,6 +300,7 @@ async function saveKri() {
   if (isNaN(valoracion) || valoracion < 0 || valoracion > 100) { toast('La valoración debe estar entre 0 y 100', 'error'); return; }
 
   const body = {
+    kri_id:          editingKriId || undefined,
     kri_name,
     kri_description: document.getElementById('kri_description').value.trim(),
     kri_formula:     document.getElementById('kri_formula').value.trim(),
@@ -311,7 +316,12 @@ async function saveKri() {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(body)
     });
-    if (!res.ok) throw new Error((await res.json()).error);
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = `Error ${res.status}`;
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      throw new Error(msg);
+    }
     toast('KRI guardado');
     closeModal();
     await loadData();
@@ -321,9 +331,14 @@ async function saveKri() {
 }
 
 async function deleteKri() {
-  if (!confirm('¿Eliminar el KRI de esta subcategoría?')) return;
-  await fetch(`/api/kris/${editingSubId}`, { method: 'DELETE' });
-  toast('KRI eliminado');
-  closeModal();
-  await loadData();
+  if (!confirm('¿Eliminar este KRI?')) return;
+  try {
+    const res = await fetch(`/api/kris/${editingKriId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error);
+    toast('KRI eliminado');
+    closeModal();
+    await loadData();
+  } catch {
+    toast('Error al eliminar', 'error');
+  }
 }
