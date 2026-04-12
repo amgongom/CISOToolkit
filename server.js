@@ -951,11 +951,20 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
   const categories   = db.prepare('SELECT * FROM categories ORDER BY code').all();
   const subcategories = db.prepare(`
     SELECT s.*,
-           k.id as kri_id, k.kri_name, k.kri_description, k.kri_formula,
-           k.cmmi_flag, k.cmmi_levels,
-           k.valoracion
+           avg_k.avg_valoracion  AS valoracion,
+           latest_k.id           AS kri_id,
+           latest_k.kri_name,
+           latest_k.kri_description,
+           latest_k.kri_formula,
+           latest_k.cmmi_flag,
+           latest_k.cmmi_levels
     FROM subcategories s
-    LEFT JOIN kris k ON k.id = (
+    LEFT JOIN (
+      SELECT subcategory_id, AVG(valoracion) AS avg_valoracion
+      FROM kris
+      GROUP BY subcategory_id
+    ) avg_k ON avg_k.subcategory_id = s.id
+    LEFT JOIN kris latest_k ON latest_k.id = (
       SELECT id FROM kris WHERE subcategory_id = s.id ORDER BY id DESC LIMIT 1
     )
     ORDER BY s.code
