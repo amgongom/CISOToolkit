@@ -12,7 +12,21 @@
       "Bash(start:*)",
       "Bash(pkill -f \"node server.js\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000/data.html)",
-      "Bash(gh auth:*)"
+      "Bash(gh auth:*)",
+      "Bash(gh repo:*)",
+      "Bash(curl -s http://localhost:3000/api/auth/me)",
+      "Bash(node -e \"const db=require\\('better-sqlite3'\\)\\('./kri.db'\\); const r=db.prepare\\('SELECT COUNT\\(*\\) as c FROM kris'\\).get\\(\\); console.log\\('KRIs in DB:', r.c\\); const s=db.prepare\\('SELECT kri_name, valoracion, cmmi_flag, valor_enero FROM kris LIMIT 3'\\).all\\(\\); console.log\\(s\\);\")",
+      "Bash(netstat -ano)",
+      "Bash(findstr :3000)",
+      "Bash(taskkill:*)",
+      "Bash(cmd:*)",
+      "Bash(node -e \"const db=require\\('better-sqlite3'\\)\\('./kri.db'\\); const r=db.prepare\\('SELECT COUNT\\(*\\) as c FROM kris'\\).get\\(\\); console.log\\('KRIs:', r.c\\); const cols=db.prepare\\('PRAGMA table_info\\(kris\\)'\\).all\\(\\).map\\(c=>c.name\\); console.log\\('Columns:', cols.join\\(', '\\)\\);\")",
+      "Bash(powershell:*)",
+      "Bash(curl -s -c /tmp/kri-cookie.txt -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"ciso\",\"password\":\"Admin1234!\"}')",
+      "Bash(curl -s -b /tmp/kri-cookie.txt http://localhost:3000/api/heatmap)",
+      "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\('Functions:', d.length\\); const fn=d[0]; console.log\\('First fn:', fn.code, 'avgVal:', fn.avgValoracion, 'cats:', fn.categories.length\\); const sub=fn.categories[0].subcategories[0]; console.log\\('First sub:', sub.code, 'val:', sub.valoracion, 'kri:', sub.kri_name\\);\")",
+      "Bash(node -e \"const r=require\\('./package.json'\\); console.log\\('express:', r.dependencies.express\\); console.log\\('serve-static:', require\\('./node_modules/serve-static/package.json'\\).version\\)\")",
+      "Bash(npx kill-port:*)"
     ]
   }
 }

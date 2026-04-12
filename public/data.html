@@ -29,8 +29,8 @@
   <!-- Main -->
   <main class="main">
     <div class="page-header">
-      <h1>Key Risk Indicators (KRI)</h1>
-      <p>List of KRI</p>
+        <h1>NIST Cybersecurity Framework 2.0</h1>
+      <p>Key Risk Indicators</p>
     </div>
 
     <!-- Filters -->
@@ -62,6 +62,15 @@
         </div>
         <button class="btn-reset" id="btnReset">↺ Limpiar</button>
         <button class="btn-reset" id="btnToggleExamples">⊟ Ocultar ejemplos</button>
+        <div style="display:flex;align-items:center;gap:.4rem;margin-left:auto">
+          <select id="exportFormat" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;cursor:pointer">
+            <option value="json">JSON</option>
+            <option value="csv">CSV</option>
+            <option value="xml">XML</option>
+            <option value="xlsx">Excel (.xlsx)</option>
+          </select>
+          <button class="btn-reset" id="btnExport">⬇ Exportar</button>
+        </div>
       </div>
       <div style="font-size:.8rem;color:var(--text-muted)" id="resultCount"></div>
     </div>

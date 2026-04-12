@@ -1,0 +1,92 @@
+NIST CSF es un marco de trabajo que se compone asi:
+Gráfica 3: niveles de organización del marco CSF 2.0
+GOVERN (GV)
+La estrategia, las expectativas y la política de gestión de riesgos de ciberseguridad de la organización se establecen, se comunican y se supervisan. La función GOVERN proporciona resultados que orientan las acciones de la organización para lograr y priorizar los resultados de las otras cinco funciones, en el contexto de su misión y las expectativas de las partes interesadas. Las actividades de gobernanza son cruciales para incorporar la ciberseguridad en la estrategia general de gestión de riesgos empresariales (ERM) de la organización. GOVERN aborda la comprensión del contexto organizacional; el establecimiento de la estrategia de ciberseguridad y la gestión de riesgos de la cadena de suministro de ciberseguridad; los roles, las responsabilidades y las autoridades; las políticas; y la supervisión de la estrategia de ciberseguridad.
+Categorías dentro de Gobierno (GV)
+GV.RM: Risk Management
+GV.PO: Policies, Processes, and Procedures
+GV.RR: Roles and Responsibilities
+GV.CO: Oversight and Accountability
+GV.RA: Risk Assessment
+GV.SC: Cybersecurity Supply Chain Risk Management
+Figura 4: Estructura de Alto Nivel del NIST Cybersecurity Framework 2.0
+IDENTIFICAR (ID)
+Se comprenden los riesgos actuales de ciberseguridad de la organización. Comprender los activos de la organización (p. ej., datos, hardware, software, sistemas, instalaciones, servicios, personal), los proveedores y los riesgos de ciberseguridad relacionados permite a la organización priorizar sus esfuerzos de acuerdo con su estrategia de gestión de riesgos y las necesidades de la misión identificadas en GOVERN. Esta función también incluye la identificación de oportunidades de mejora para las políticas, planes, procesos, procedimientos y prácticas de la organización que respaldan la gestión de riesgos de ciberseguridad, con el fin de fundamentar los esfuerzos de las seis funciones.
+Categorías dentro de Identificar (ID)
+ID.AM: Asset Management
+ID.IM: Identity Management
+ID.DE: Data and Systems Categorization
+ID.RA: Risk Assessment
+PROTEGER (PR)
+Se utilizan salvaguardas para gestionar los riesgos de ciberseguridad de la organización. Una vez identificados y priorizados los activos y riesgos, PROTEGER facilita la protección de dichos activos para prevenir o reducir la probabilidad y el impacto de eventos adversos de ciberseguridad, así como para aumentar la probabilidad y el impacto de aprovechar las oportunidades. Los resultados de esta función incluyen la gestión de identidades, la autenticación y el control de acceso; la concienciación y la formación; la seguridad de los datos; la seguridad de la plataforma (es decir, la protección del hardware, el software y los servicios de las plataformas físicas y virtuales); y la resiliencia de la infraestructura tecnológica.
+Categorías dentro de Proteger (PR)
+PR.AC: Access Control
+PR.DS: Data Security
+PR.PT: Protective Technology
+PR.IP: Information Protection Processes and Procedures
+PR.MA: Maintenance
+PR.AT: Awareness and Training
+DETECTAR (DE)
+Se detectan y analizan posibles ataques y vulnerabilidades de ciberseguridad. DETECTAR permite el descubrimiento y análisis oportunos de anomalías, indicadores de vulnerabilidad y otros eventos potencialmente adversos que puedan indicar la ocurrencia de ataques e incidentes de ciberseguridad. Esta función facilita la respuesta a incidentes y la recuperación ante ellos.
+Categorías dentro de Detectar (DE)
+DE.AE: Anomalies and Events
+DE.CM: Continuous Monitoring
+DE.DP: Detection Processes
+RESPONDER (RS)
+Se toman medidas ante un incidente de ciberseguridad detectado. RESPONDER facilita la capacidad de contener los efectos de los incidentes de ciberseguridad. Los resultados de esta función abarcan la gestión, el análisis, la mitigación, la elaboración de informes y la comunicación de incidentes.
+Categorías dentro de Responder (RS)
+RS.RP: Response Planning
+RS.CO: Communications
+RS.AN: Analysis
+RS.MI: Mitigation
+RS.IM: Improvements
+RECUPERACIÓN (RC)
+Se restauran los activos y las operaciones afectados por un incidente de ciberseguridad. RECOVER facilita la restauración oportuna de las operaciones normales para reducir los efectos de los incidentes de ciberseguridad y facilitar una comunicación adecuada durante las tareas de recuperación. Si bien muchas actividades de gestión de riesgos de ciberseguridad se centran en prevenir eventos negativos, también pueden contribuir al aprovechamiento de las oportunidades positivas. Las medidas para reducir los riesgos de ciberseguridad pueden beneficiar a una organización de otras maneras, como aumentar los ingresos (p. ej., primero, ofrecer espacio excedente a un proveedor de hosting comercial para alojar sus propios centros de datos y los de otras organizaciones, y luego, trasladar un importante sistema financiero del centro de datos interno de la organización al proveedor de hosting para reducir los riesgos de ciberseguridad).
+Categorías dentro de Recuperación (RC)
+RC.RP: Recovery Planning
+RC.IM: Improvements
+RC.CO: Communications
+Metodología
+Establecimiento de Niveles de Madurez: Se definirán umbrales para cada indicador que corresponderán a un nivel de madurez (ej: Inicial, Gestionado, Definido, Cuantitativamente Gestionado, Cuantitativamente Gestionado y Optimización) y a un código de color (Rojo, Amarillo, Verde).
+Inicial: Procesos impredecibles, mal controlados y reactivos. El éxito depende de personas individuales.
+Gestionado: Los proyectos se planifican, ejecutan y controlan. Se gestionan requisitos, calidad y riesgos.
+Definido: Los procesos están documentados, estandarizados y se mejoran continuamente. Se aplican a toda la organización.
+Cuantitativamente Gestionado: Se usan métricas y análisis estadísticos para controlar procesos y calidad.
+Optimización: Mejora continua basada en innovación, retroalimentación y análisis cuantitativo.
+Gráfica 5: niveles de madurez CMMI
+Evaluación del nivel de Madurez
+Una vez definidos los indicadores, determinamos en función de los valores que nivel de madurez le otorgamos, junto con un color asignado a cada valor. Los colores nos permitirán pintar el mapa de calor: una herramienta visual que facilita entender la postura de seguridad actual, así como la evolución con las mejoras que vayamos realizando.
+Seleccionamos el framework CMMI (Capability Maturity Model Integration) como referencia para indicar la escala de colores del mapa de calor. CMMI abarca 5 niveles de madurez en los procesos.
+Nivel
+Nombre
+Descripción
+Color
+Rango %
+1
+Inicial
+Procesos impredecibles, mal controlados y reactivos. El éxito depende de individuos.
+0-20
+2
+Gestionado
+Los proyectos se planifican, ejecutan, miden y controlan. Gestión básica de proyectos.
+21-40
+3
+Definido
+Los procesos están bien documentados, estandarizados y seguidos en toda la organización.
+41-60
+4
+Cuantitativamente gestionado
+Se utilizan métricas para controlar y mejorar procesos. Se predicen resultados de procesos.
+61-80
+5
+En optimización
+Mejora continua con base en retroalimentación cuantitativa y análisis innovadores.
+81-100
+Definición de los Niveles de madurez
+Nivel 1 (Inicial): No existe un inventario formal o, si existe, es una lista puntual creada para una necesidad específica (ad-hoc). No hay un responsable definido ni un proceso para su mantenimiento. La información es poco fiable e incompleta. 
+Nivel 2 (Gestionado): Se ha establecido un proceso básico para mantener un inventario (ej. una hoja de cálculo compartida). Hay un responsable asignado. El inventario se actualiza de forma manual y esporádica, a menudo con retrasos. Es útil para consultas básicas, pero su fiabilidad es limitada. 
+Nivel 3 (Definido): El proceso de gestión del inventario está formalmente definido, documentado y comunicado. El inventario se mantiene y actualiza periódicamente (ej. trimestralmente) siguiendo dicho proceso. Se incluyen atributos clave del hardware (modelo, S/N, ubicación, propietario). La información es generalmente fiable.
+Nivel 4 (Gestionado Cuantitativamente): La eficacia y eficiencia del proceso de inventario se miden con métricas (ej. % de activos no encontrados, tiempo medio para registrar un nuevo activo). Se utilizan herramientas que automatizan parcialmente la recolección de datos. Los resultados se analizan para identificar desviaciones y mejorar el proceso.
+Nivel 5 (En Optimización): El inventario está completamente automatizado, con herramientas de descubrimiento continuo que detectan y registran nuevos activos en la red en tiempo real. Se realiza una reconciliación automática con otras fuentes (compras, AD). El inventario se integra y utiliza activamente para otros procesos como la gestión del ciclo de vida, la gestión de parches, el análisis de riesgos y la planificación financiera. El proceso se mejora continuamente.
+Resultado de ejecutar python.py:
+El resultado (captura.png) es un mapa de calor visual e intuitivo que ofrece una "fotografía" instantánea de la postura de seguridad de la organización. Permite identificar de un vistazo las áreas críticas (rojas) que requieren atención inmediata y las áreas con buen desempeño (verdes). Debe permitir Drilldown por funcion, categoría y subcategoría, para finalmente llegar al KRI.

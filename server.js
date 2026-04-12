@@ -1106,6 +1106,106 @@ app.delete('/api/kris/:kriId', requireAuth, (req, res) => {
   }
 });
 
+// GET /api/export/excel — export filtered KRIs as .xlsx
+app.get('/api/export/excel', requireAuth, (req, res) => {
+  const { functionId, categoryId, kriFilter, search } = req.query;
+  let sql = `
+    SELECT s.id as subcategory_id, s.code, s.description, s.category_id,
+           c.code as category_code, c.name as category_name, c.function_id,
+           f.code as function_code, f.name as function_name,
+           k.id as kri_id, k.kri_name, k.kri_description, k.kri_formula,
+           k.cmmi_flag, k.cmmi_levels, k.valoracion, k.updated_at,
+           h.saved_by as last_saved_by, h.saved_at as last_saved_at
+    FROM subcategories s
+    JOIN categories c ON s.category_id = c.id
+    JOIN functions f ON c.function_id = f.id
+    LEFT JOIN kris k ON k.subcategory_id = s.id
+    LEFT JOIN (
+      SELECT kri_id, saved_by, saved_at
+      FROM kri_history
+      WHERE id IN (SELECT MAX(id) FROM kri_history GROUP BY kri_id)
+    ) h ON h.kri_id = k.id
+    WHERE 1=1
+  `;
+  const params = [];
+  if (functionId) { sql += ' AND f.id = ?'; params.push(functionId); }
+  if (categoryId) { sql += ' AND c.id = ?'; params.push(categoryId); }
+  if (kriFilter === 'with')    { sql += ' AND k.id IS NOT NULL'; }
+  if (kriFilter === 'without') { sql += ' AND k.id IS NULL'; }
+  if (search) {
+    sql += ' AND (s.code LIKE ? OR s.description LIKE ? OR k.kri_name LIKE ? OR k.kri_description LIKE ?)';
+    const q = `%${search}%`;
+    params.push(q, q, q, q);
+  }
+  sql += ' ORDER BY s.code, k.id';
+  const rows = db.prepare(sql).all(...params);
+
+  // CMMI level computation (same logic as client)
+  function cmmiLevel(val, flag, levels) {
+    if (val == null || val === '') return { level: null, name: '—' };
+    const v = parseFloat(val);
+    const lvlNames = ['Inicial', 'Repetible', 'Definido', 'Gestionado', 'Optimizado'];
+    let thresholds = [20, 40, 60, 80];
+    if (levels) {
+      try { thresholds = JSON.parse(levels); } catch (e) { /* use default */ }
+    }
+    let lvl;
+    if (flag === 'POSITIVO') {
+      if      (v >= thresholds[3]) lvl = 5;
+      else if (v >= thresholds[2]) lvl = 4;
+      else if (v >= thresholds[1]) lvl = 3;
+      else if (v >= thresholds[0]) lvl = 2;
+      else                          lvl = 1;
+    } else {
+      if      (v <= thresholds[0]) lvl = 5;
+      else if (v <= thresholds[1]) lvl = 4;
+      else if (v <= thresholds[2]) lvl = 3;
+      else if (v <= thresholds[3]) lvl = 2;
+      else                          lvl = 1;
+    }
+    return { level: lvl, name: `N${lvl} – ${lvlNames[lvl - 1]}` };
+  }
+
+  const data = rows.map(r => {
+    const cm = cmmiLevel(r.valoracion, r.cmmi_flag, r.cmmi_levels);
+    return {
+      'Función (Código)':       r.function_code  || '',
+      'Función (Nombre)':       r.function_name  || '',
+      'Categoría (Código)':     r.category_code  || '',
+      'Categoría (Nombre)':     r.category_name  || '',
+      'Subcategoría (Código)':  r.code           || '',
+      'Subcategoría (Descripción)': r.description || '',
+      'KRI ID':                 r.kri_id         != null ? r.kri_id : '',
+      'KRI Nombre':             r.kri_name       || '',
+      'KRI Descripción':        r.kri_description || '',
+      'KRI Fórmula':            r.kri_formula    || '',
+      'Valoración (0-100)':     r.valoracion     != null ? r.valoracion : '',
+      'Nivel CMMI':             cm.level         != null ? cm.level : '',
+      'Nivel CMMI (Nombre)':    cm.name,
+      'CMMI Flag':              r.cmmi_flag      || '',
+      'Última actualización':   r.updated_at     || '',
+      'Actualizado por':        r.last_saved_by  || '',
+    };
+  });
+
+  const wb = XLSX.utils.book_new();
+  const ws = XLSX.utils.json_to_sheet(data);
+
+  // Auto column widths
+  const colWidths = Object.keys(data[0] || {}).map(k => ({
+    wch: Math.max(k.length, ...data.map(r => String(r[k] || '').length), 10)
+  }));
+  ws['!cols'] = colWidths;
+
+  XLSX.utils.book_append_sheet(wb, ws, 'KRI Dashboard');
+  const buf = XLSX.write(wb, { type: 'buffer', bookType: 'xlsx' });
+
+  const today = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', `attachment; filename="kri_export_${today}.xlsx"`);
+  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+  res.send(buf);
+});
+
 // ─── Redirect root ────────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => {
