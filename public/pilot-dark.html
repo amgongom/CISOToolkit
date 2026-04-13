@@ -1,0 +1,937 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CISOToolkit — Pilot Dark</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    /* ── Reset ─────────────────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    /* ── Design tokens ─────────────────────────────────────────────────────── */
+    :root {
+      --bg-base:      #0a0e14;
+      --bg-surface:   #111820;
+      --bg-elevated:  #1a2230;
+      --bg-overlay:   #222d3a;
+
+      --border-faint: rgba(48,64,80,.55);
+      --border-soft:  #1e2d3d;
+      --border-mid:   #2e4055;
+
+      --text-primary:   #e2eaf4;
+      --text-secondary: #7a90a8;
+      --text-muted:     #3d5068;
+
+      --accent:       #4d9fff;
+      --accent-dim:   rgba(77,159,255,.13);
+      --accent-glow:  rgba(77,159,255,.07);
+
+      --green:  #2ea84a;
+      --red:    #f04f45;
+      --yellow: #c98e1a;
+
+      /* CMMI palette (matches legend + badge colors) */
+      --cmmi-n1: #ef4444;
+      --cmmi-n2: #f97316;
+      --cmmi-n3: #fbbf24;
+      --cmmi-n4: #a3e635;
+      --cmmi-n5: #16a34a;
+
+      --font-ui:   'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+
+      --radius-sm:  4px;
+      --radius-md:  8px;
+      --radius-lg:  12px;
+      --shadow-lg:  0 20px 56px rgba(0,0,0,.75);
+      --shadow-md:  0 6px 24px rgba(0,0,0,.5);
+      --glow-accent: 0 0 24px rgba(77,159,255,.08);
+    }
+
+    /* ── Base ──────────────────────────────────────────────────────────────── */
+    html, body {
+      height: 100%; overflow: hidden;
+      background: var(--bg-base);
+      color: var(--text-primary);
+      font-family: var(--font-ui);
+      font-size: 14px;
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+    }
+
+    /* ── App shell ─────────────────────────────────────────────────────────── */
+    .app {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+    }
+
+    /* ── Topbar ────────────────────────────────────────────────────────────── */
+    .topbar {
+      height: 52px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 0 1.25rem;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border-soft);
+      box-shadow: 0 1px 0 rgba(77,159,255,.06), var(--shadow-md);
+      position: relative;
+      z-index: 10;
+    }
+    /* Subtle cyan-to-blue accent line at very top of topbar */
+    .topbar::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 2px;
+      background: linear-gradient(90deg, #1a3a6b 0%, #4d9fff 40%, #1a9fff 70%, #1a3a6b 100%);
+      opacity: .75;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: .55rem;
+      text-decoration: none;
+      color: var(--text-primary);
+      font-weight: 700;
+      font-size: .88rem;
+      letter-spacing: .01em;
+      flex-shrink: 0;
+    }
+
+    .brand-mark {
+      width: 28px; height: 28px;
+      background: linear-gradient(145deg, #0f3460 0%, #1a5fb4 50%, #4d9fff 100%);
+      border-radius: 7px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px;
+      box-shadow: 0 0 0 1px rgba(77,159,255,.3), 0 0 14px rgba(77,159,255,.2);
+    }
+
+    .topbar-divider {
+      width: 1px; height: 18px;
+      background: var(--border-soft);
+      flex-shrink: 0;
+    }
+
+    .topbar-nav {
+      display: flex;
+      gap: 2px;
+    }
+
+    .topbar-nav a {
+      display: flex;
+      align-items: center;
+      gap: .3rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      font-size: .82rem;
+      font-weight: 500;
+      padding: .3rem .75rem;
+      border-radius: var(--radius-sm);
+      transition: color .15s, background .15s;
+      white-space: nowrap;
+      position: relative;
+    }
+
+    .topbar-nav a:hover {
+      color: var(--text-primary);
+      background: var(--bg-elevated);
+    }
+
+    .topbar-nav a.active {
+      color: var(--accent);
+      background: var(--accent-dim);
+      font-weight: 600;
+    }
+    /* Active tab underline indicator */
+    .topbar-nav a.active::after {
+      content: '';
+      position: absolute;
+      bottom: -1px; left: 20%; right: 20%;
+      height: 2px;
+      background: var(--accent);
+      border-radius: 2px 2px 0 0;
+      opacity: .8;
+    }
+
+    .topbar-spacer { flex: 1; }
+
+    .topbar-right {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      font-size: .78rem;
+      color: var(--text-secondary);
+    }
+
+    .live-badge {
+      display: flex;
+      align-items: center;
+      gap: .35rem;
+      font-size: .7rem;
+      font-weight: 600;
+      letter-spacing: .06em;
+      color: var(--green);
+      background: rgba(46,168,74,.08);
+      border: 1px solid rgba(46,168,74,.22);
+      border-radius: 20px;
+      padding: .22rem .6rem;
+    }
+
+    .live-dot {
+      width: 6px; height: 6px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green), 0 0 12px rgba(46,168,74,.4);
+      animation: pulse 2.5s infinite;
+    }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: .4; }
+    }
+
+    .topbar-user {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+    }
+
+    .avatar {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-soft);
+      display: flex; align-items: center; justify-content: center;
+      font-size: .72rem;
+      color: var(--text-secondary);
+    }
+
+    .btn-logout {
+      background: none;
+      border: 1px solid var(--border-soft);
+      color: var(--text-secondary);
+      font-size: .75rem;
+      font-family: var(--font-ui);
+      padding: .25rem .6rem;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .btn-logout:hover {
+      border-color: var(--border-mid);
+      color: var(--text-primary);
+      background: var(--bg-elevated);
+    }
+
+    /* ── Sub-header (breadcrumb bar) ───────────────────────────────────────── */
+    .subheader {
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      padding: 0 1.25rem;
+      height: 38px;
+      background: rgba(10,14,20,.95);
+      border-bottom: 1px solid var(--border-faint);
+    }
+
+    #breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: .15rem;
+      flex: 1;
+      font-size: .78rem;
+      overflow: hidden;
+    }
+
+    .bc-item {
+      color: var(--accent);
+      cursor: pointer;
+      padding: .2rem .4rem;
+      border-radius: var(--radius-sm);
+      transition: background .12s;
+      white-space: nowrap;
+      font-weight: 500;
+    }
+    .bc-item:hover { background: var(--accent-dim); }
+    .bc-item.current {
+      color: var(--text-primary);
+      cursor: default;
+      font-weight: 600;
+    }
+    .bc-sep {
+      color: var(--text-muted);
+      font-size: .7rem;
+      padding: 0 .1rem;
+    }
+
+    #hint {
+      font-size: .72rem;
+      color: var(--text-muted);
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    /* ── Chart ─────────────────────────────────────────────────────────────── */
+    .chart-area {
+      flex: 1;
+      min-height: 0;
+      padding: .65rem 1rem .5rem;
+      display: flex;
+      flex-direction: column;
+      gap: .55rem;
+      overflow: hidden;
+    }
+
+    #chart {
+      flex: 1;
+      min-height: 0;
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: 0 0 0 1px var(--border-soft), var(--shadow-lg);
+    }
+
+    /* ── KRI Panel ─────────────────────────────────────────────────────────── */
+    #kri-panel {
+      display: none;
+      flex-shrink: 0;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-soft);
+      border-top: 1px solid var(--border-mid);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-md);
+    }
+    #kri-panel.open { display: block; }
+
+    .kri-panel-head {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: .8rem 1rem .65rem;
+      border-bottom: 1px solid var(--border-soft);
+      background: var(--bg-elevated);
+    }
+
+    .kri-panel-title {
+      font-weight: 600;
+      font-size: .85rem;
+      color: var(--text-primary);
+      letter-spacing: .01em;
+    }
+
+    .kri-panel-sub {
+      font-size: .72rem;
+      color: var(--text-secondary);
+      margin-top: .12rem;
+      font-family: var(--font-mono);
+      letter-spacing: .02em;
+    }
+
+    .kri-panel-close {
+      background: none; border: none;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: .85rem;
+      padding: .2rem .4rem;
+      border-radius: var(--radius-sm);
+      transition: all .12s;
+      line-height: 1;
+    }
+    .kri-panel-close:hover {
+      background: var(--bg-overlay);
+      color: var(--text-primary);
+    }
+
+    #kp-list {
+      padding: .7rem 1rem;
+      max-height: 200px;
+      overflow-y: auto;
+      display: flex;
+      flex-wrap: wrap;
+      gap: .5rem;
+    }
+
+    #kp-list::-webkit-scrollbar { width: 5px; }
+    #kp-list::-webkit-scrollbar-track { background: transparent; }
+    #kp-list::-webkit-scrollbar-thumb { background: var(--border-mid); border-radius: 3px; }
+
+    .kri-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-soft);
+      /* Left accent border is set inline via JS with CMMI color */
+      border-left-width: 3px;
+      border-radius: var(--radius-md);
+      padding: .65rem .85rem .65rem .9rem;
+      flex: 1;
+      min-width: 240px;
+      max-width: 400px;
+      transition: box-shadow .15s, border-color .15s;
+    }
+    .kri-card:hover {
+      box-shadow: 0 4px 16px rgba(0,0,0,.35);
+    }
+
+    .kri-card-name {
+      font-weight: 600;
+      font-size: .82rem;
+      color: var(--text-primary);
+      margin-bottom: .18rem;
+      letter-spacing: .005em;
+    }
+
+    .kri-card-desc {
+      font-size: .73rem;
+      color: var(--text-secondary);
+      margin-bottom: .28rem;
+      line-height: 1.45;
+    }
+
+    .kri-card-formula {
+      font-size: .68rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+      margin-bottom: .35rem;
+      background: rgba(10,14,20,.6);
+      border: 1px solid var(--border-faint);
+      padding: .2rem .45rem;
+      border-radius: 3px;
+    }
+
+    .kri-card-footer {
+      display: flex;
+      align-items: center;
+      gap: .5rem;
+      flex-wrap: wrap;
+      margin-top: .1rem;
+    }
+
+    .score-badge {
+      font-family: var(--font-mono);
+      font-weight: 700;
+      font-size: .8rem;
+      padding: .14rem .5rem;
+      border-radius: 20px;
+      color: #000;
+      letter-spacing: .02em;
+    }
+
+    .cmmi-label {
+      font-size: .71rem;
+      color: var(--text-secondary);
+      font-weight: 500;
+    }
+
+    .saved-by {
+      font-size: .69rem;
+      color: var(--text-muted);
+      margin-left: auto;
+      font-family: var(--font-mono);
+    }
+
+    /* ── Tooltip ───────────────────────────────────────────────────────────── */
+    #tooltip {
+      position: fixed;
+      display: none;
+      pointer-events: none;
+      background: #192434;
+      border: 1px solid #2a3d52;
+      border-top: 1px solid #2e4a68;
+      color: var(--text-primary);
+      border-radius: var(--radius-md);
+      padding: .7rem 1rem;
+      font-size: .78rem;
+      font-family: var(--font-ui);
+      max-width: 300px;
+      line-height: 1.6;
+      z-index: 9999;
+      box-shadow: 0 12px 40px rgba(0,0,0,.7), 0 0 0 1px rgba(77,159,255,.06);
+    }
+
+    /* ── Node styles ───────────────────────────────────────────────────────── */
+    .node { cursor: pointer; }
+    .node rect { stroke: var(--bg-base); stroke-width: 1.5px; }
+    .node:hover rect { filter: brightness(1.12); }
+    .node text { pointer-events: none; font-family: var(--font-ui); }
+
+    /* ── Legend ────────────────────────────────────────────────────────────── */
+    .legend {
+      display: flex;
+      align-items: center;
+      gap: .85rem;
+      flex-wrap: wrap;
+      flex-shrink: 0;
+      padding: .3rem .1rem;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: .4rem;
+      font-size: .69rem;
+      font-weight: 500;
+      color: var(--text-secondary);
+      letter-spacing: .01em;
+    }
+
+    .legend-swatch {
+      width: 10px; height: 10px;
+      border-radius: 2px;
+      flex-shrink: 0;
+    }
+
+    /* N-level color glows on swatches */
+    .legend-swatch[style*="#ef4444"] { box-shadow: 0 0 5px rgba(239,68,68,.5); }
+    .legend-swatch[style*="#f97316"] { box-shadow: 0 0 5px rgba(249,115,22,.4); }
+    .legend-swatch[style*="#fbbf24"] { box-shadow: 0 0 5px rgba(251,191,36,.35); }
+    .legend-swatch[style*="#a3e635"] { box-shadow: 0 0 5px rgba(163,230,53,.35); }
+    .legend-swatch[style*="#16a34a"] { box-shadow: 0 0 5px rgba(22,163,74,.45); }
+  </style>
+</head>
+<body>
+<div class="app">
+
+  <!-- ── Topbar ────────────────────────────────────────────────────────────── -->
+  <header class="topbar">
+    <a class="brand" href="/pilot-dark.html">
+      <div class="brand-mark">🛡</div>
+      <span>CISOToolkit</span>
+    </a>
+
+    <div class="topbar-divider"></div>
+
+    <nav class="topbar-nav">
+      <a href="/pilot-dark.html" class="active">Heatmap</a>
+      <a href="/data.html">Key Risk Indicators</a>
+    </nav>
+
+    <div class="topbar-spacer"></div>
+
+    <div class="topbar-right">
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <div class="topbar-user">
+        <div class="avatar">👤</div>
+        <span id="topbarUser" style="font-size:.78rem"></span>
+        <button class="btn-logout" id="logoutBtn">Salir</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- ── Sub-header ────────────────────────────────────────────────────────── -->
+  <div class="subheader">
+    <div id="breadcrumb"></div>
+    <div id="hint"></div>
+  </div>
+
+  <!-- ── Chart area ────────────────────────────────────────────────────────── -->
+  <div class="chart-area">
+
+    <!-- Legend -->
+    <div class="legend">
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#ef4444"></div>N1 Inicial (0–20)
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#f97316"></div>N2 Gestionado (21–40)
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#fbbf24"></div>N3 Definido (41–60)
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#a3e635"></div>N4 Cuant. Gestionado (61–80)
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#16a34a"></div>N5 Optimizado (81–100)
+      </div>
+      <div class="legend-item">
+        <div class="legend-swatch" style="background:#21262d;border:1px solid #444c56"></div>Sin datos
+      </div>
+    </div>
+
+    <div id="chart"></div>
+
+    <!-- KRI Panel -->
+    <div id="kri-panel">
+      <div class="kri-panel-head">
+        <div>
+          <div class="kri-panel-title" id="kp-title"></div>
+          <div class="kri-panel-sub"   id="kp-desc"></div>
+        </div>
+        <button class="kri-panel-close" id="kp-close">✕</button>
+      </div>
+      <div id="kp-list"></div>
+    </div>
+
+  </div>
+</div>
+
+<div id="tooltip"></div>
+
+<script src="/js/common.js"></script>
+<script>
+'use strict';
+
+// ── Color helpers ─────────────────────────────────────────────────────────────
+function cmmiColor(v) {
+  if (v == null) return '#21262d';
+  const stops = [[0,'#ef4444'],[20,'#f97316'],[40,'#fbbf24'],[60,'#a3e635'],[80,'#16a34a'],[100,'#16a34a']];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (v >= stops[i][0] && v <= stops[i+1][0])
+      return d3.interpolateRgb(stops[i][1], stops[i+1][1])(
+        (v - stops[i][0]) / (stops[i+1][0] - stops[i][0]));
+  }
+  return '#16a34a';
+}
+
+function cmmiLabel(v) {
+  if (v == null) return 'Sin datos';
+  if (v <= 20)  return 'N1 Inicial';
+  if (v <= 40)  return 'N2 Gestionado';
+  if (v <= 60)  return 'N3 Definido';
+  if (v <= 80)  return 'N4 Cuant. Gestionado';
+  return 'N5 Optimizado';
+}
+
+// ── Build full D3 hierarchy ───────────────────────────────────────────────────
+function buildHierarchy(api) {
+  return d3.hierarchy({
+    name:'NIST CSF 2.0', code:'ROOT', type:'root',
+    children: api.map(fn => ({
+      name:fn.name, code:fn.code, type:'function', valoracion:fn.avgValoracion,
+      children: fn.categories.map(cat => ({
+        name:cat.name, code:cat.code, type:'category', valoracion:cat.avgValoracion,
+        fnCode:fn.code, fnName:fn.name,
+        children: cat.subcategories.map(s => ({
+          name:s.code, code:s.code, type:'subcategory',
+          description:s.description, valoracion:s.valoracion,
+          kri_name:s.kri_name, subId:s.id,
+          fnCode:fn.code, fnName:fn.name,
+          catCode:cat.code, catName:cat.name,
+          value:1
+        }))
+      }))
+    }))
+  }).sum(d => d.value || 0).sort((a, b) => b.value - a.value);
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let rootH     = null;
+let focusNode = null;
+const tip     = document.getElementById('tooltip');
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await initTopbar(null);
+  const api = await (await fetch('/api/heatmap')).json();
+  rootH     = buildHierarchy(api);
+  focusNode = rootH;
+  render();
+  document.getElementById('kp-close').addEventListener('click', () =>
+    document.getElementById('kri-panel').classList.remove('open'));
+})();
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render() {
+  d3.select('#chart').selectAll('svg').remove();
+
+  const el = document.getElementById('chart');
+  const W  = el.clientWidth;
+  const H  = el.clientHeight || (window.innerHeight - 180);
+  el.style.height = H + 'px';
+
+  const subtreeData = focusNode.data;
+  const subtreeH = d3.hierarchy(subtreeData)
+    .sum(d => d.value || 0)
+    .sort((a, b) => b.value - a.value);
+
+  d3.treemap()
+    .size([W, H])
+    .paddingOuter(focusNode === rootH ? 6 : 4)
+    .paddingTop(d => d.depth === 1 ? 26 : 1)
+    .paddingInner(2)
+    .tile(d3.treemapResquarify)
+    (subtreeH);
+
+  const svg = d3.select('#chart').append('svg')
+    .attr('width', W).attr('height', H)
+    .style('display', 'block')
+    .style('max-width', '100%')
+    .style('background', '#0a0e14')
+    .style('border-radius', '12px')
+    .style('border', 'none');
+
+  // ── Parent group backgrounds ───────────────────────────────────────────────
+  const parents = subtreeH.descendants().filter(d => d.depth === 1 && d.children);
+
+  svg.selectAll('.bg')
+    .data(parents).join('rect').attr('class','bg')
+    .attr('x', d=>d.x0).attr('y', d=>d.y0)
+    .attr('width', d=>d.x1-d.x0).attr('height', d=>d.y1-d.y0)
+    .attr('fill', 'none')
+    .attr('stroke', '#1e2d3d').attr('stroke-width', 1.5)
+    .attr('rx', 6);
+
+  // Parent header labels
+  svg.selectAll('.bg-lbl')
+    .data(parents).join('text').attr('class','bg-lbl')
+    .attr('x', d=>d.x0+7).attr('y', d=>d.y0+17)
+    .attr('font-size', 13).attr('font-weight', 700)
+    .attr('font-family', "'Inter', system-ui, sans-serif")
+    .attr('fill', d => d.data.type === 'function' ? '#d8e6f4' : '#6a869e')
+    .attr('letter-spacing', d => d.data.type === 'function' ? '.04em' : '0')
+    .attr('pointer-events','none')
+    .text(d => `${d.data.code} · ${d.data.name}`);
+
+  // ── Leaf nodes ─────────────────────────────────────────────────────────────
+  const leaves = subtreeH.leaves();
+
+  const defs = svg.append('defs');
+  leaves.forEach((d, i) => {
+    defs.append('clipPath').attr('id', `nc-${i}`)
+      .append('rect')
+        .attr('width',  Math.max(0, d.x1-d.x0))
+        .attr('height', Math.max(0, d.y1-d.y0));
+  });
+
+  const nodeG = svg.selectAll('.node')
+    .data(leaves).join('g').attr('class','node')
+    .attr('transform', d => `translate(${d.x0},${d.y0})`)
+    .attr('clip-path', (d, i) => `url(#nc-${i})`);
+
+  nodeG.append('rect')
+    .attr('width',  d => Math.max(0, d.x1-d.x0))
+    .attr('height', d => Math.max(0, d.y1-d.y0))
+    .attr('fill',   d => cmmiColor(d.data.valoracion))
+    .attr('rx', 3)
+    .attr('cursor', d => d.data.type === 'subcategory' ? 'pointer' : 'zoom-in')
+
+  // Font helpers
+  const catFs   = d => Math.min(13, (d.x1-d.x0) / 7);
+  const codeFs  = d => Math.min(13, Math.max(8, (d.x1-d.x0) / 4.5));
+  const showCat = d => (d.y1-d.y0) > 28 && catFs(d) >= 8;
+
+  nodeG.each(function(d) {
+    const g   = d3.select(this);
+    const nw  = d.x1 - d.x0;
+    const pad = 5, maxW = nw - pad * 2;
+    const cfSize = catFs(d), cdSize = codeFs(d);
+    let curY = pad;
+
+    // Category name with word-wrap
+    if (showCat(d)) {
+      const t = g.append('text')
+        .attr('font-size', cfSize).attr('font-weight', 500)
+        .attr('font-family', "'Inter', system-ui, sans-serif")
+        .attr('fill', 'rgba(0,0,0,.72)');
+
+      const words = (d.data.catName || '').split(/\s+/);
+      let line = [], lineCount = 1;
+      let tspan = t.append('tspan').attr('x', pad).attr('y', curY + cfSize);
+
+      for (const word of words) {
+        const candidate = [...line, word].join(' ');
+        tspan.text(candidate);
+        if (line.length > 0 && tspan.node().getComputedTextLength() > maxW) {
+          tspan.text(line.join(' '));
+          line = [word];
+          lineCount++;
+          tspan = t.append('tspan').attr('x', pad).attr('dy', cfSize * 1.25).text(word);
+        } else {
+          line = [...line, word];
+        }
+      }
+      curY += cfSize + (lineCount - 1) * cfSize * 1.25 + cfSize * 1.1;
+    }
+
+    // Subcategory code — monospace
+    if (cdSize >= 6) {
+      const t = g.append('text')
+        .attr('x', pad).attr('y', curY + cdSize)
+        .attr('font-size', cdSize).attr('font-weight', 700)
+        .attr('font-family', "'JetBrains Mono', monospace")
+        .attr('fill', '#000')
+        .text(d.data.code);
+      const tn = t.node();
+      while (tn.getComputedTextLength() > maxW && t.text().length > 1)
+        t.text(t.text().slice(0, -2) + '…');
+    }
+
+
+  });
+
+  // ── Click handler ──────────────────────────────────────────────────────────
+  nodeG.on('click', (event, d) => {
+    tip.style.display = 'none';
+    if (d.data.type === 'subcategory') {
+      openKriPanel(d.data);
+    } else {
+      rootH.each(n => {
+        if (n.data.code === d.data.code && n.data.type === d.data.type)
+          focusNode = n;
+      });
+      document.getElementById('kri-panel').classList.remove('open');
+      render();
+      updateBreadcrumb();
+    }
+  });
+
+  // ── Parent header click ────────────────────────────────────────────────────
+  svg.selectAll('.bg-click')
+    .data(parents).join('rect').attr('class','bg-click')
+    .attr('x', d=>d.x0).attr('y', d=>d.y0)
+    .attr('width', d=>d.x1-d.x0).attr('height', 24)
+    .attr('fill','transparent').attr('cursor','zoom-in')
+    .on('click', (event, d) => {
+      rootH.each(n => {
+        if (n.data.code === d.data.code && n.data.type === d.data.type)
+          focusNode = n;
+      });
+      document.getElementById('kri-panel').classList.remove('open');
+      render();
+      updateBreadcrumb();
+    });
+
+  // ── Tooltip ────────────────────────────────────────────────────────────────
+  nodeG.on('mouseover', (e, d) => {
+    const v = d.data.valoracion;
+    const isSubcat = d.data.type === 'subcategory';
+    tip.innerHTML = `
+      <div style="font-size:.68rem;color:#4d7090;margin-bottom:.32rem;font-weight:500;letter-spacing:.04em;text-transform:uppercase">
+        ${d.data.fnName || ''}${d.data.catName ? ` <span style="color:#2e4a68;margin:0 .15rem">›</span> ${d.data.catName}` : ''}
+      </div>
+      <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.9rem;color:#e2eaf4;margin-bottom:.22rem;letter-spacing:.03em">${d.data.code}</div>
+      ${d.data.description ? `<div style="color:#7a90a8;font-size:.73rem;margin-bottom:.38rem;line-height:1.5">${d.data.description.substring(0,120)}</div>` : ''}
+      <div style="display:flex;align-items:center;gap:.5rem;margin-bottom:.18rem">
+        <span style="background:${cmmiColor(v)};color:#000;font-weight:700;font-size:.78rem;padding:.12rem .5rem;border-radius:20px;font-family:'JetBrains Mono',monospace">${v!=null?Number(v).toFixed(1):'—'}</span>
+        <span style="color:#8ba8c0;font-size:.73rem;font-weight:500">${cmmiLabel(v)}</span>
+      </div>
+      <div style="color:#2e4a68;font-size:.67rem;margin-top:.25rem;font-style:italic">${isSubcat?'Click para ver KRIs →':'Click para hacer drilldown →'}</div>`;
+    tip.style.display = 'block';
+  })
+  .on('mousemove', e => {
+    tip.style.left = `${Math.min(e.clientX+16, window.innerWidth-300)}px`;
+    tip.style.top  = `${Math.min(e.clientY+16, window.innerHeight-120)}px`;
+  })
+  .on('mouseout', () => tip.style.display = 'none');
+
+  // Hint
+  const hints = {
+    root:     'Click en una Función para hacer drilldown',
+    function: 'Click en una Categoría para ver Subcategorías',
+    category: 'Click en una Subcategoría para ver sus KRIs'
+  };
+  document.getElementById('hint').textContent = hints[focusNode.data.type] || '';
+
+  updateBreadcrumb();
+  window.onresize = render;
+}
+
+// ── Breadcrumb ────────────────────────────────────────────────────────────────
+function updateBreadcrumb(subData) {
+  const path = focusNode.ancestors().reverse();
+
+  let items;
+  if (subData) {
+    items = [
+      { label: 'NIST CSF 2.0',                                                   navIdx: 0 },
+      { label: subData.fnName.toUpperCase(),                                      navCode: subData.fnCode, navType: 'function' },
+      { label: subData.catName.toUpperCase(),                                     navCode: subData.catCode, navType: 'category' },
+      { label: (subData.description||subData.code).substring(0,50).toUpperCase(), isCurrent: true },
+    ];
+  } else {
+    items = path.map((node, i) => ({
+      label: node.data.code === 'ROOT'
+        ? 'NIST CSF 2.0'
+        : (node.data.name || node.data.code).toUpperCase(),
+      navIdx: i,
+      isCurrent: i === path.length - 1,
+    }));
+  }
+
+  document.getElementById('breadcrumb').innerHTML = items.map((item, i) =>
+    `${i > 0 ? '<span class="bc-sep"> › </span>' : ''}
+     <span class="bc-item ${item.isCurrent ? 'current' : ''}"
+           data-i="${item.navIdx ?? -1}"
+           data-code="${item.navCode || ''}"
+           data-type="${item.navType || ''}">${item.label}</span>`
+  ).join('');
+
+  document.querySelectorAll('.bc-item:not(.current)').forEach(el => {
+    el.addEventListener('click', () => {
+      document.getElementById('kri-panel').classList.remove('open');
+      const code = el.dataset.code, type = el.dataset.type;
+      if (code) {
+        rootH.each(n => {
+          if (n.data.code === code && n.data.type === type) focusNode = n;
+        });
+      } else {
+        focusNode = path[parseInt(el.dataset.i)] || rootH;
+      }
+      render();
+    });
+  });
+}
+
+// ── KRI Panel ─────────────────────────────────────────────────────────────────
+async function openKriPanel(sub) {
+  updateBreadcrumb(sub);
+  const panel = document.getElementById('kri-panel');
+  document.getElementById('kp-title').textContent = `${sub.fnName}  ·  ${sub.catName}`;
+  document.getElementById('kp-desc').textContent  = `${sub.code} — ${sub.description || ''}`;
+  document.getElementById('kp-list').innerHTML =
+    '<div style="color:#8b949e;font-size:.82rem;padding:.25rem 0">Cargando KRIs…</div>';
+  panel.classList.add('open');
+  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+
+  try {
+    const rows = await (await fetch(`/api/kris?subcategoryId=${sub.subId}`)).json();
+    const kris = rows.filter(r => r.kri_id);
+
+    if (!kris.length) {
+      document.getElementById('kp-list').innerHTML =
+        '<div style="color:#484f58;font-style:italic;font-size:.82rem">Sin KRIs asignados.</div>';
+      return;
+    }
+
+    document.getElementById('kp-list').innerHTML = kris.map(k => {
+      const v      = k.valoracion != null ? Number(k.valoracion).toFixed(1) : null;
+      const col    = cmmiColor(k.valoracion);
+      /* Score badge: use black text on bright badges (N3/N4), white on dark ones */
+      const bright = k.valoracion != null && k.valoracion > 40 && k.valoracion <= 80;
+      const txtCol = bright ? '#111' : '#fff';
+      /* Left border accent color — solid if scored, muted if no data */
+      const borderCol = k.valoracion != null ? col : '#2e4055';
+      return `
+        <div class="kri-card" style="border-left-color:${borderCol}">
+          <div class="kri-card-name">${k.kri_name}</div>
+          ${k.kri_description ? `<div class="kri-card-desc">${k.kri_description}</div>` : ''}
+          ${k.kri_formula    ? `<div class="kri-card-formula">${k.kri_formula}</div>` : ''}
+          <div class="kri-card-footer">
+            ${v != null ? `<span class="score-badge" style="background:${col};color:${txtCol}">${v}</span>` : ''}
+            <span class="cmmi-label">${cmmiLabel(k.valoracion)}</span>
+            ${k.last_saved_by ? `<span class="saved-by">${k.last_saved_by}</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } catch {
+    document.getElementById('kp-list').innerHTML =
+      '<div style="color:#f85149;font-size:.82rem">Error al cargar.</div>';
+  }
+}
+</script>
+</body>
+</html>

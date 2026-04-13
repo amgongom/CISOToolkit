@@ -7,13 +7,13 @@
   <link rel="stylesheet" href="/css/styles.css">
   <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   <style>
-    #chart { width:100%; height:calc(100vh - 240px); min-height:400px; }
+    #chart { width:100%; height:calc(100vh - 200px); min-height:400px; }
     svg { display:block; }
 
     .node { cursor:pointer; }
     .node rect { stroke:#0f172a; stroke-width:1px; }
     .node:hover rect { opacity:.82; }
-    .node text { pointer-events:none; font-family:'Segoe UI',system-ui,sans-serif; fill:#fff; }
+    .node text { pointer-events:none; font-family:'Segoe UI',system-ui,sans-serif; fill:#000; }
 
     /* Breadcrumb */
     #breadcrumb {
@@ -64,7 +64,7 @@
     </a>
     <nav class="topbar-nav">
       <a href="/heatmap.html" class="active">Heatmap</a>
-      <a href="/data.html">Datos</a>
+      <a href="/data.html">Key Risk Indicators</a>
     </nav>
     <div class="topbar-spacer"></div>
     <div class="topbar-user">
@@ -73,14 +73,17 @@
     </div>
   </header>
 
-  <main class="main">
+  <main class="main" style="padding-bottom:0">
     <div class="page-header" style="margin-bottom:.6rem">
       <h1>NIST Cybersecurity Framework 2.0</h1>
       <p>Heatmap of Key Risk Indicators</p>
     </div>
-
     <div id="breadcrumb"></div>
     <div id="hint">Click en un nodo para navegar</div>
+  </main>
+
+  <!-- Chart fuera del contenedor centrado para ocupar todo el ancho -->
+  <div style="padding:0 1rem;box-sizing:border-box;width:100%">
     <div id="chart"></div>
 
     <!-- KRI Panel -->
@@ -96,7 +99,7 @@
       </div>
       <div id="kp-list"></div>
     </div>
-  </main>
+  </div>
 </div>
 <div id="tooltip"></div>
 
@@ -132,6 +135,7 @@ function buildHierarchy(api) {
       name:fn.name, code:fn.code, type:'function', valoracion:fn.avgValoracion,
       children: fn.categories.map(cat => ({
         name:cat.name, code:cat.code, type:'category', valoracion:cat.avgValoracion,
+        fnCode:fn.code, fnName:fn.name,
         children: cat.subcategories.map(s => ({
           name:s.code, code:s.code, type:'subcategory',
           description:s.description, valoracion:s.valoracion,
@@ -166,6 +170,9 @@ const tip    = document.getElementById('tooltip');
 
 // ── Render treemap from focusNode ─────────────────────────────────────────────
 function render() {
+  // Remove old SVG first so the container can shrink freely before measuring
+  d3.select('#chart').selectAll('svg').remove();
+
   const el = document.getElementById('chart');
   const W  = el.clientWidth;
   const H  = el.clientHeight || (window.innerHeight - 260);
@@ -180,16 +187,14 @@ function render() {
   d3.treemap()
     .size([W, H])
     .paddingOuter(focusNode === rootH ? 5 : 3)
-    .paddingTop(d => d.depth === 1 ? 22 : 1)
+    .paddingTop(d => d.depth === 1 ? 26 : 1)
     .paddingInner(2)
     .tile(d3.treemapResquarify)
     (subtreeH);
-
-  // Clear and redraw
-  d3.select('#chart').selectAll('svg').remove();
   const svg = d3.select('#chart').append('svg')
     .attr('width', W).attr('height', H)
     .style('display','block')
+    .style('max-width','100%')
     .style('background','#1e293b')
     .style('border-radius','8px')
     .style('border','1px solid #475569');
@@ -201,15 +206,16 @@ function render() {
     .data(parents).join('rect').attr('class','bg')
     .attr('x', d=>d.x0).attr('y', d=>d.y0)
     .attr('width', d=>d.x1-d.x0).attr('height', d=>d.y1-d.y0)
-    .attr('fill', d => d3.color(cmmiColor(d.data.valoracion)).darker(1.3))
+    .attr('fill', 'none')
+    .attr('stroke', '#475569').attr('stroke-width', 1)
     .attr('rx', 5);
 
   // Parent header labels
   svg.selectAll('.bg-lbl')
     .data(parents).join('text').attr('class','bg-lbl')
-    .attr('x', d=>d.x0+5).attr('y', d=>d.y0+14)
-    .attr('font-size', 11).attr('font-weight', 700)
-    .attr('fill','#fff').attr('pointer-events','none')
+    .attr('x', d=>d.x0+5).attr('y', d=>d.y0+17)
+    .attr('font-size', 14).attr('font-weight', 700)
+    .attr('fill', d => d.data.type === 'function' ? '#fff' : '#000').attr('pointer-events','none')
     .text(d => {
       const label = `${d.data.code} · ${d.data.name}`;
       return label;
@@ -217,35 +223,80 @@ function render() {
 
   // ── Leaf nodes ────────────────────────────────────────────────────────────
   const leaves = subtreeH.leaves();
+
+  // Clip paths — one per node so text never overflows the box
+  const defs = svg.append('defs');
+  leaves.forEach((d, i) => {
+    defs.append('clipPath').attr('id', `nc-${i}`)
+      .append('rect')
+        .attr('width',  Math.max(0, d.x1-d.x0))
+        .attr('height', Math.max(0, d.y1-d.y0));
+  });
+
   const nodeG  = svg.selectAll('.node')
     .data(leaves).join('g').attr('class','node')
-    .attr('transform', d => `translate(${d.x0},${d.y0})`);
+    .attr('transform', d => `translate(${d.x0},${d.y0})`)
+    .attr('clip-path', (d, i) => `url(#nc-${i})`);
 
   nodeG.append('rect')
     .attr('width',  d => Math.max(0, d.x1-d.x0))
     .attr('height', d => Math.max(0, d.y1-d.y0))
     .attr('fill',   d => cmmiColor(d.data.valoracion))
     .attr('rx', 2)
-    .attr('cursor', d => d.data.type === 'subcategory' ? 'pointer' : 'zoom-in');
+    .attr('cursor', d => d.data.type === 'subcategory' ? 'pointer' : 'zoom-in')
 
-  // Code label
-  nodeG.append('text')
-    .attr('x', 3).attr('y', 12)
-    .attr('font-size', d => Math.min(11, Math.max(7, (d.x1-d.x0)/5)))
-    .attr('font-weight', 700)
-    .text(d => d.data.code)
-    .each(function(d) {
-      const max = d.x1-d.x0-6;
-      while (this.textContent.length > 1 && this.getComputedTextLength() > max)
-        this.textContent = this.textContent.slice(0,-2)+'…';
-    });
+  // helpers — font sizes scale purely with node width, no hard minimum
+  const catFs  = d => Math.min(13, (d.x1-d.x0) / 7);
+  const codeFs = d => Math.min(13, Math.max(8, (d.x1-d.x0) / 4.5));
+  const showCat = d => (d.y1-d.y0) > 28 && catFs(d) >= 8;
 
-  // Value label
-  nodeG.filter(d => (d.y1-d.y0) > 26 && (d.x1-d.x0) > 28)
-    .append('text')
-    .attr('x', 3).attr('y', 24)
-    .attr('font-size', 9).attr('fill','rgba(255,255,255,.8)')
-    .text(d => d.data.valoracion != null ? Number(d.data.valoracion).toFixed(1) : '');
+  // Render all text per node with proper word-wrap for category name
+  nodeG.each(function(d) {
+    const g   = d3.select(this);
+    const nw  = d.x1 - d.x0, nh = d.y1 - d.y0;
+    const pad = 4, maxW = nw - pad * 2;
+    const cfSize = catFs(d), cdSize = codeFs(d);
+    let curY = pad;
+
+    // ── Category name with word-wrap ──────────────────────────────────────
+    if (showCat(d)) {
+      const t = g.append('text')
+        .attr('font-size', cfSize).attr('font-weight', 600)
+        .attr('fill', 'rgba(0,0,0,.75)');
+
+      const words = (d.data.catName || '').split(/\s+/);
+      let line = [], lineCount = 1;
+      let tspan = t.append('tspan').attr('x', pad).attr('y', curY + cfSize);
+
+      for (const word of words) {
+        const candidate = [...line, word].join(' ');
+        tspan.text(candidate);
+        if (line.length > 0 && tspan.node().getComputedTextLength() > maxW) {
+          tspan.text(line.join(' '));   // revert to line without overflow word
+          line = [word];
+          lineCount++;
+          tspan = t.append('tspan').attr('x', pad).attr('dy', cfSize * 1.25).text(word);
+        } else {
+          line = [...line, word];
+        }
+      }
+      curY += cfSize + (lineCount - 1) * cfSize * 1.25 + cfSize * 1.1; // extra gap = line break
+    }
+
+    // ── Subcategory code (truncate — codes have no spaces to wrap) ────────
+    if (cdSize >= 6) {
+      const t = g.append('text')
+        .attr('x', pad).attr('y', curY + cdSize)
+        .attr('font-size', cdSize).attr('font-weight', 700)
+        .attr('fill', '#000')
+        .text(d.data.code);
+      const tn = t.node();
+      while (tn.getComputedTextLength() > maxW && t.text().length > 1)
+        t.text(t.text().slice(0, -2) + '…');
+    }
+
+
+  });
 
   // ── Click handler ─────────────────────────────────────────────────────────
   nodeG.on('click', (event, d) => {
@@ -283,11 +334,18 @@ function render() {
   // ── Tooltip ───────────────────────────────────────────────────────────────
   nodeG.on('mouseover', (e, d) => {
       const v = d.data.valoracion;
-      tip.innerHTML = `<b>${d.data.code}</b>
-        ${d.data.description ? `<br><span style="color:#94a3b8;font-size:.78rem">${d.data.description.substring(0,90)}…</span>` : ''}
-        <br>Val: <b style="color:${cmmiColor(v)}">${v!=null?Number(v).toFixed(1):'—'}</b>
-        &nbsp;·&nbsp;<span style="color:#94a3b8">${cmmiLabel(v)}</span>
-        <br><span style="color:#64748b;font-size:.75rem">${d.data.type==='subcategory'?'Click para ver KRIs':'Click para hacer drilldown'}</span>`;
+      const isSubcat = d.data.type === 'subcategory';
+      tip.innerHTML = `
+        <div style="font-size:.72rem;color:#64748b;margin-bottom:.25rem">
+          ${d.data.fnName || ''}
+          ${d.data.catName ? ` <span style="color:#475569">›</span> ${d.data.catName}` : ''}
+        </div>
+        <b style="font-size:.92rem">${d.data.code}</b>
+        ${d.data.description ? `<br><span style="color:#94a3b8;font-size:.78rem">${d.data.description.substring(0,100)}</span>` : ''}
+        <br><span style="color:#64748b;font-size:.75rem;margin-top:.2rem;display:inline-block">Val: </span>
+        <b style="color:${cmmiColor(v)}">${v!=null?Number(v).toFixed(1):'—'}</b>
+        <span style="color:#94a3b8;font-size:.78rem"> · ${cmmiLabel(v)}</span>
+        <br><span style="color:#475569;font-size:.72rem">${isSubcat?'Click para ver KRIs':'Click para hacer drilldown'}</span>`;
       tip.style.display='block';
     })
     .on('mousemove', e => {
