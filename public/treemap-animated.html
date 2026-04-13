@@ -78,7 +78,7 @@
 
   <main class="main">
     <div class="page-header" style="margin-bottom:.6rem">
-      <h1>③ Treemap Drilldown — D3.js</h1>
+      <h1>NIST Cybersecurity Framework 2.0</h1>
       <p>Click en Función o Categoría para hacer drilldown · Click en Subcategoría para ver KRIs</p>
     </div>
 
@@ -310,22 +310,51 @@ function render() {
 }
 
 // ── Breadcrumb ────────────────────────────────────────────────────────────────
-function updateBreadcrumb() {
-  const path = focusNode.ancestors().reverse(); // root → ... → focusNode
-  document.getElementById('breadcrumb').innerHTML = path.map((node, i) => {
-    const isLast = i === path.length - 1;
-    const label  = node.data.code === 'ROOT' ? 'NIST CSF 2.0' : `${node.data.code} · ${node.data.name || ''}`;
-    return `
-      ${i > 0 ? '<span class="bc-sep">›</span>' : ''}
-      <span class="bc-item ${isLast ? 'current' : ''}" data-i="${i}">${label}</span>`;
-  }).join('');
+function updateBreadcrumb(subData) {
+  // Build path from focusNode ancestors
+  const path = focusNode.ancestors().reverse(); // [root, fn?, cat?]
 
-  // Click on non-current breadcrumb items to go back up
-  document.querySelectorAll('.bc-item:not(.current)').forEach((el, _, all) => {
+  // If a subcategory was clicked, build the full path using its stored ancestors
+  let items;
+  if (subData) {
+    // Always show full chain: root → function → category → subcategory
+    items = [
+      { label: 'NIST CSF 2.0',                                                  navIdx: 0 },
+      { label: subData.fnName.toUpperCase(),                                     navCode: subData.fnCode, navType: 'function' },
+      { label: subData.catName.toUpperCase(),                                    navCode: subData.catCode, navType: 'category' },
+      { label: (subData.description||subData.code).substring(0,50).toUpperCase(), isCurrent: true },
+    ];
+  } else {
+    items = path.map((node, i) => ({
+      label: node.data.code === 'ROOT'
+        ? 'NIST CSF 2.0'
+        : (node.data.name || node.data.code).toUpperCase(),
+      navIdx: i,
+      isCurrent: i === path.length - 1,
+    }));
+  }
+
+  document.getElementById('breadcrumb').innerHTML = items.map((item, i) =>
+    `${i > 0 ? '<span class="bc-sep"> — </span>' : ''}
+     <span class="bc-item ${item.isCurrent ? 'current' : ''}"
+           data-i="${item.navIdx ?? -1}"
+           data-code="${item.navCode || ''}"
+           data-type="${item.navType || ''}">${item.label}</span>`
+  ).join('');
+
+  document.querySelectorAll('.bc-item:not(.current)').forEach(el => {
     el.addEventListener('click', () => {
-      const idx = parseInt(el.dataset.i);
-      focusNode = path[idx];
       document.getElementById('kri-panel').classList.remove('open');
+      const code = el.dataset.code;
+      const type = el.dataset.type;
+      if (code) {
+        // Navigate to this node in the full hierarchy
+        rootH.each(n => {
+          if (n.data.code === code && n.data.type === type) focusNode = n;
+        });
+      } else {
+        focusNode = path[parseInt(el.dataset.i)] || rootH;
+      }
       render();
     });
   });
@@ -333,13 +362,14 @@ function updateBreadcrumb() {
 
 // ── KRI Panel ────────────────────────────────────────────────────────────────
 async function openKriPanel(sub) {
+  updateBreadcrumb(sub);   // añade la subcategoría al breadcrumb sin cambiar focusNode
   const panel = document.getElementById('kri-panel');
-  document.getElementById('kp-title').textContent = `${sub.code}  ·  ${sub.catCode}  ·  ${sub.fnCode}`;
-  document.getElementById('kp-desc').textContent  = sub.description || '';
+  document.getElementById('kp-title').textContent = `${sub.fnName}  ·  ${sub.catName}`;
+  document.getElementById('kp-desc').textContent  = `${sub.code} — ${sub.description || ''}`;
   document.getElementById('kp-list').innerHTML    =
     '<div style="color:#94a3b8;font-size:.82rem">Cargando KRIs…</div>';
   panel.classList.add('open');
-  panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+  panel.scrollIntoView({ behavior:'smooth', block:'start' });
 
   try {
     const rows = await (await fetch(`/api/kris?subcategoryId=${sub.subId}`)).json();
