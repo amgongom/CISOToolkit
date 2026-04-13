@@ -3,31 +3,68 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Mapa de Calor KRI — NIST CSF 2.0</title>
+  <title>Heatmap — NIST CSF 2.0</title>
   <link rel="stylesheet" href="/css/styles.css">
-  <script src="https://cdn.jsdelivr.net/npm/echarts@5.4.3/dist/echarts.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
   <style>
-    #treemapChart { width: 100%; height: calc(100vh - 200px); min-height: 500px; }
-    .cmmi-legend {
-      display: flex; align-items: center; gap: 1rem;
-      flex-wrap: wrap; font-size: .78rem; color: var(--text-muted);
-      margin-top: .75rem;
+    #chart { width:100%; height:calc(100vh - 240px); min-height:400px; }
+    svg { display:block; }
+
+    .node { cursor:pointer; }
+    .node rect { stroke:#0f172a; stroke-width:1px; }
+    .node:hover rect { opacity:.82; }
+    .node text { pointer-events:none; font-family:'Segoe UI',system-ui,sans-serif; fill:#fff; }
+
+    /* Breadcrumb */
+    #breadcrumb {
+      display:flex; align-items:center; gap:.4rem; flex-wrap:wrap;
+      background:#1e293b; border:1px solid #475569; border-radius:8px;
+      padding:.5rem .85rem; margin-bottom:.6rem; font-size:.85rem;
     }
-    .cmmi-legend .legend-item { display: flex; align-items: center; gap: .4rem; }
-    .cmmi-legend .legend-dot  { width: 14px; height: 14px; border-radius: 3px; flex-shrink: 0; }
+    .bc-item {
+      color:#3b82f6; cursor:pointer; padding:.2rem .45rem;
+      border-radius:4px; transition:background .15s;
+    }
+    .bc-item:hover { background:#334155; }
+    .bc-item.current { color:#f1f5f9; cursor:default; font-weight:600; }
+    .bc-sep { color:#475569; }
+
+    /* Hint bar */
+    #hint {
+      font-size:.78rem; color:#64748b; margin-bottom:.5rem;
+    }
+
+    /* Tooltip */
+    #tooltip {
+      position:fixed; display:none; pointer-events:none;
+      background:#0f172a; border:1px solid #334155; color:#f1f5f9;
+      border-radius:6px; padding:.5rem .75rem; font-size:.82rem;
+      font-family:'Segoe UI',system-ui,sans-serif; max-width:260px;
+      line-height:1.5; z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,.5);
+    }
+
+    /* KRI Panel */
+    #kri-panel {
+      display:none; background:#1e293b; border:1px solid #475569;
+      border-radius:8px; padding:1rem; margin-top:.75rem;
+    }
+    #kri-panel.open { display:block; }
+    .kri-card {
+      background:#0f172a; border:1px solid #334155; border-radius:6px;
+      padding:.75rem; margin-bottom:.5rem;
+    }
+    .kri-card:last-child { margin-bottom:0; }
   </style>
 </head>
 <body>
 <div class="app-container">
-
   <header class="topbar">
     <a class="topbar-brand" href="/heatmap.html">
-      <div class="shield">🛡</div>
-      <span>Key Risk Indicators</span>
+      <div class="shield">🛡</div><span>CISOToolkit</span>
     </a>
     <nav class="topbar-nav">
-      <a href="/heatmap.html" data-page="heatmap">Mapa de Calor</a>
-      <a href="/data.html"    data-page="data">Datos</a>
+      <a href="/heatmap.html" class="active">Heatmap</a>
+      <a href="/data.html">Datos</a>
     </nav>
     <div class="topbar-spacer"></div>
     <div class="topbar-user">
@@ -37,168 +74,335 @@
   </header>
 
   <main class="main">
-    <div class="page-header">
+    <div class="page-header" style="margin-bottom:.6rem">
       <h1>NIST Cybersecurity Framework 2.0</h1>
-      <p>Heatmap</p>
+      <p>Heatmap of Key Risk Indicators</p>
     </div>
 
-    <!-- Export bar -->
-    <div style="display:flex;justify-content:flex-end;align-items:center;gap:.4rem;margin-bottom:.75rem">
-      <select id="exportFormat" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;cursor:pointer">
-        <option value="json">JSON</option>
-        <option value="csv">CSV</option>
-        <option value="xml">XML</option>
-        <option value="xlsx">Excel (.xlsx)</option>
-      </select>
-      <button class="btn-reset" id="btnExport">⬇ Exportar</button>
-    </div>
+    <div id="breadcrumb"></div>
+    <div id="hint">Click en un nodo para navegar</div>
+    <div id="chart"></div>
 
-    <!-- Stats -->
-    <div class="heatmap-stats" id="statsRow">
-      <div class="stat-card"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total subcategorías</div></div>
-      <div class="stat-card"><div class="stat-value" id="stat-withkri">—</div><div class="stat-label">Con KRI asignado</div></div>
-      <div class="stat-card"><div class="stat-value" id="stat-avg" style="color:var(--text-muted)">—</div><div class="stat-label">Valoración promedio</div></div>
-      <div class="stat-card"><div class="stat-value" id="stat-n1" style="color:var(--color-n1)">—</div><div class="stat-label">Nivel N1 (crítico)</div></div>
-    </div>
-
-    <!-- Treemap + escala lateral -->
-    <div class="card" style="padding:.75rem;display:flex;gap:.75rem;align-items:stretch">
-      <div id="treemapChart" style="flex:1;min-width:0"></div>
-
-      <!-- Barra de escala CMMI -->
-      <div style="display:flex;flex-direction:column;width:140px;flex-shrink:0;gap:2px;font-family:Segoe UI,system-ui,sans-serif">
-        <div style="font-size:.7rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:.07em;margin-bottom:4px;text-align:center">Escala CMMI</div>
-        <div style="flex:1;background:#16a34a;border-radius:6px 6px 0 0;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px 4px;color:#fff">
-          <span style="font-size:1.1rem;font-weight:800">N5</span>
-          <span style="font-size:.72rem;font-weight:600;text-align:center;line-height:1.3">En Optimización</span>
-          <span style="font-size:.68rem;opacity:.8">81 – 100</span>
+    <!-- KRI Panel -->
+    <div id="kri-panel">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                  margin-bottom:.75rem;padding-bottom:.6rem;border-bottom:1px solid #475569">
+        <div>
+          <div style="font-weight:700;font-size:.95rem" id="kp-title"></div>
+          <div style="font-size:.8rem;color:#94a3b8;margin-top:.15rem" id="kp-desc"></div>
         </div>
-        <div style="flex:1;background:#a3e635;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px 4px;color:#1e293b">
-          <span style="font-size:1.1rem;font-weight:800">N4</span>
-          <span style="font-size:.72rem;font-weight:600;text-align:center;line-height:1.3">Cuant. Gestionado</span>
-          <span style="font-size:.68rem;opacity:.8">61 – 80</span>
-        </div>
-        <div style="flex:1;background:var(--color-n3);display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px 4px;color:#1e293b">
-          <span style="font-size:1.1rem;font-weight:800">N3</span>
-          <span style="font-size:.72rem;font-weight:600;text-align:center;line-height:1.3">Definido</span>
-          <span style="font-size:.68rem;opacity:.8">41 – 60</span>
-        </div>
-        <div style="flex:1;background:var(--color-n2);display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px 4px;color:#fff">
-          <span style="font-size:1.1rem;font-weight:800">N2</span>
-          <span style="font-size:.72rem;font-weight:600;text-align:center;line-height:1.3">Gestionado</span>
-          <span style="font-size:.68rem;opacity:.8">21 – 40</span>
-        </div>
-        <div style="flex:1;background:var(--color-n1);display:flex;flex-direction:column;justify-content:center;align-items:center;padding:8px 4px;color:#fff">
-          <span style="font-size:1.1rem;font-weight:800">N1</span>
-          <span style="font-size:.72rem;font-weight:600;text-align:center;line-height:1.3">Inicial</span>
-          <span style="font-size:.68rem;opacity:.8">0 – 20</span>
-        </div>
-        <div style="flex:0 0 40px;background:var(--color-nodata);border-radius:0 0 6px 6px;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:4px;color:#cbd5e1">
-          <span style="font-size:.7rem;font-weight:600">Sin datos</span>
-        </div>
+        <button id="kp-close"
+          style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.1rem">✕</button>
       </div>
+      <div id="kp-list"></div>
     </div>
   </main>
 </div>
-
-<!-- KRI Edit Modal -->
-<div class="modal-overlay hidden" id="kriModal">
-  <div class="modal" style="max-width:580px">
-    <div class="modal-header">
-      <div class="modal-title">
-        <h2>Editar KRI</h2>
-      </div>
-      <button class="modal-close" id="modalClose">✕</button>
-    </div>
-    <div class="modal-body">
-      <!-- Campos de contexto (solo lectura) -->
-      <div class="form-row" style="grid-template-columns:1fr 1fr;margin-bottom:0">
-        <div class="form-group">
-          <label>Función</label>
-          <div id="fieldFuncion" class="field-readonly"></div>
-        </div>
-        <div class="form-group">
-          <label>Categoría</label>
-          <div id="fieldCategoria" class="field-readonly"></div>
-        </div>
-      </div>
-      <div class="form-row" style="grid-template-columns:1fr 2fr;margin-bottom:.75rem">
-        <div class="form-group">
-          <label>Subcategoría</label>
-          <div id="fieldSubcategoria" class="field-readonly"></div>
-        </div>
-        <div class="form-group">
-          <label>Descripción</label>
-          <div id="fieldDescripcion" class="field-readonly" style="font-size:.82rem;line-height:1.4"></div>
-        </div>
-      </div>
-      <hr style="border:none;border-top:1px solid var(--border);margin:.25rem 0 .75rem">
-      <form id="kriForm" autocomplete="off">
-        <div class="form-group">
-          <label>Nombre / Título del KRI</label>
-          <input type="text" id="kri_name" placeholder="Ej: % de activos sin inventariar">
-        </div>
-        <div class="form-group">
-          <label>Descripción del KRI</label>
-          <textarea id="kri_description" rows="2" placeholder="Descripción del indicador..."></textarea>
-        </div>
-        <div class="form-group">
-          <label>Fórmula de Cálculo</label>
-          <textarea id="kri_formula" rows="2" placeholder="Ej: (Activos no registrados / Total activos) × 100"></textarea>
-        </div>
-        <div class="form-row">
-          <div class="form-group">
-            <label>Valoración actual (0–100)</label>
-            <input type="number" id="kri_valoracion" min="0" max="100" step="0.1" placeholder="0.0">
-          </div>
-          <div class="form-group">
-            <label>Nivel CMMI</label>
-            <div class="field-readonly" id="cmmiLevelHint" style="font-weight:700;font-size:.95rem"></div>
-          </div>
-          <div class="form-group">
-            <label>CMMI Flag</label>
-            <select id="kri_cmmi_flag" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.6rem .85rem;font-size:.9rem;width:100%">
-              <option value="">— seleccionar —</option>
-              <option value="POSITIVO">POSITIVO (↑ = mejor)</option>
-              <option value="NEGATIVO">NEGATIVO (↑ = peor)</option>
-            </select>
-          </div>
-        </div>
-      </form>
-      <!-- History -->
-      <div id="kriHistoryBox" style="display:none;margin-top:1.25rem">
-        <div style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Historial de valoraciones</div>
-        <div id="kriHistoryList" style="max-height:180px;overflow-y:auto;font-size:.82rem"></div>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-danger" id="btnDeleteKri" style="display:none">Eliminar KRI</button>
-      <button class="btn btn-secondary" id="btnCancelKri">Cancelar</button>
-      <button class="btn btn-primary" id="btnSaveKri">Guardar KRI</button>
-    </div>
-  </div>
-</div>
-
-<!-- Drilldown Modal -->
-<div class="modal-overlay hidden" id="drilldownModal">
-  <div class="modal" style="max-width:820px">
-    <div class="modal-header">
-      <div class="modal-title">
-        <h2 id="ddTitle">—</h2>
-        <p id="ddSubtitle" style="color:var(--text-muted);font-size:.85rem;margin-top:.2rem"></p>
-      </div>
-      <button class="modal-close" id="ddClose">✕</button>
-    </div>
-    <div class="modal-body" style="padding:0;max-height:75vh;overflow-y:auto">
-      <div id="ddContent" style="padding:.25rem 0"></div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" id="ddCancel">Cerrar</button>
-    </div>
-  </div>
-</div>
+<div id="tooltip"></div>
 
 <script src="/js/common.js"></script>
-<script src="/js/heatmap.js"></script>
+<script>
+'use strict';
+
+// ── Color helpers ─────────────────────────────────────────────────────────────
+function cmmiColor(v) {
+  if (v == null) return '#475569';
+  const stops = [[0,'#ef4444'],[20,'#f97316'],[40,'#fbbf24'],[60,'#a3e635'],[80,'#16a34a'],[100,'#16a34a']];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (v >= stops[i][0] && v <= stops[i+1][0])
+      return d3.interpolateRgb(stops[i][1], stops[i+1][1])(
+        (v - stops[i][0]) / (stops[i+1][0] - stops[i][0]));
+  }
+  return '#16a34a';
+}
+function cmmiLabel(v) {
+  if (v == null) return 'Sin datos';
+  if (v <= 20) return 'N1 Inicial';
+  if (v <= 40) return 'N2 Gestionado';
+  if (v <= 60) return 'N3 Definido';
+  if (v <= 80) return 'N4 Cuant. Gestionado';
+  return 'N5 Optimizado';
+}
+
+// ── Build full D3 hierarchy ───────────────────────────────────────────────────
+function buildHierarchy(api) {
+  return d3.hierarchy({
+    name:'NIST CSF 2.0', code:'ROOT', type:'root',
+    children: api.map(fn => ({
+      name:fn.name, code:fn.code, type:'function', valoracion:fn.avgValoracion,
+      children: fn.categories.map(cat => ({
+        name:cat.name, code:cat.code, type:'category', valoracion:cat.avgValoracion,
+        children: cat.subcategories.map(s => ({
+          name:s.code, code:s.code, type:'subcategory',
+          description:s.description, valoracion:s.valoracion,
+          kri_name:s.kri_name, subId:s.id,
+          fnCode:fn.code, fnName:fn.name,
+          catCode:cat.code, catName:cat.name,
+          value:1
+        }))
+      }))
+    }))
+  }).sum(d => d.value || 0).sort((a, b) => b.value - a.value);
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let rootH    = null;   // full d3 hierarchy
+let focusNode = null;  // currently visible subtree root
+const tip    = document.getElementById('tooltip');
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await initTopbar(null);
+
+  const api = await (await fetch('/api/heatmap')).json();
+  rootH     = buildHierarchy(api);
+  focusNode = rootH;
+
+  render();
+
+  document.getElementById('kp-close').addEventListener('click', () =>
+    document.getElementById('kri-panel').classList.remove('open'));
+})();
+
+// ── Render treemap from focusNode ─────────────────────────────────────────────
+function render() {
+  const el = document.getElementById('chart');
+  const W  = el.clientWidth;
+  const H  = el.clientHeight || (window.innerHeight - 260);
+  el.style.height = H + 'px';
+
+  // Re-run layout on the focused subtree
+  const subtreeData = focusNode.data;
+  const subtreeH    = d3.hierarchy(subtreeData)
+    .sum(d => d.value || 0)
+    .sort((a, b) => b.value - a.value);
+
+  d3.treemap()
+    .size([W, H])
+    .paddingOuter(focusNode === rootH ? 5 : 3)
+    .paddingTop(d => d.depth === 1 ? 22 : 1)
+    .paddingInner(2)
+    .tile(d3.treemapResquarify)
+    (subtreeH);
+
+  // Clear and redraw
+  d3.select('#chart').selectAll('svg').remove();
+  const svg = d3.select('#chart').append('svg')
+    .attr('width', W).attr('height', H)
+    .style('display','block')
+    .style('background','#1e293b')
+    .style('border-radius','8px')
+    .style('border','1px solid #475569');
+
+  // ── Parent group backgrounds ──────────────────────────────────────────────
+  const parents = subtreeH.descendants().filter(d => d.depth === 1 && d.children);
+
+  svg.selectAll('.bg')
+    .data(parents).join('rect').attr('class','bg')
+    .attr('x', d=>d.x0).attr('y', d=>d.y0)
+    .attr('width', d=>d.x1-d.x0).attr('height', d=>d.y1-d.y0)
+    .attr('fill', d => d3.color(cmmiColor(d.data.valoracion)).darker(1.3))
+    .attr('rx', 5);
+
+  // Parent header labels
+  svg.selectAll('.bg-lbl')
+    .data(parents).join('text').attr('class','bg-lbl')
+    .attr('x', d=>d.x0+5).attr('y', d=>d.y0+14)
+    .attr('font-size', 11).attr('font-weight', 700)
+    .attr('fill','#fff').attr('pointer-events','none')
+    .text(d => {
+      const label = `${d.data.code} · ${d.data.name}`;
+      return label;
+    });
+
+  // ── Leaf nodes ────────────────────────────────────────────────────────────
+  const leaves = subtreeH.leaves();
+  const nodeG  = svg.selectAll('.node')
+    .data(leaves).join('g').attr('class','node')
+    .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+  nodeG.append('rect')
+    .attr('width',  d => Math.max(0, d.x1-d.x0))
+    .attr('height', d => Math.max(0, d.y1-d.y0))
+    .attr('fill',   d => cmmiColor(d.data.valoracion))
+    .attr('rx', 2)
+    .attr('cursor', d => d.data.type === 'subcategory' ? 'pointer' : 'zoom-in');
+
+  // Code label
+  nodeG.append('text')
+    .attr('x', 3).attr('y', 12)
+    .attr('font-size', d => Math.min(11, Math.max(7, (d.x1-d.x0)/5)))
+    .attr('font-weight', 700)
+    .text(d => d.data.code)
+    .each(function(d) {
+      const max = d.x1-d.x0-6;
+      while (this.textContent.length > 1 && this.getComputedTextLength() > max)
+        this.textContent = this.textContent.slice(0,-2)+'…';
+    });
+
+  // Value label
+  nodeG.filter(d => (d.y1-d.y0) > 26 && (d.x1-d.x0) > 28)
+    .append('text')
+    .attr('x', 3).attr('y', 24)
+    .attr('font-size', 9).attr('fill','rgba(255,255,255,.8)')
+    .text(d => d.data.valoracion != null ? Number(d.data.valoracion).toFixed(1) : '');
+
+  // ── Click handler ─────────────────────────────────────────────────────────
+  nodeG.on('click', (event, d) => {
+    tip.style.display = 'none';
+    if (d.data.type === 'subcategory') {
+      openKriPanel(d.data);
+    } else {
+      // Drill into this node in the full hierarchy
+      rootH.each(n => {
+        if (n.data.code === d.data.code && n.data.type === d.data.type)
+          focusNode = n;
+      });
+      document.getElementById('kri-panel').classList.remove('open');
+      render();
+      updateBreadcrumb();
+    }
+  });
+
+  // ── Parent header click (drill into that group) ───────────────────────────
+  svg.selectAll('.bg-click')
+    .data(parents).join('rect').attr('class','bg-click')
+    .attr('x', d=>d.x0).attr('y', d=>d.y0)
+    .attr('width', d=>d.x1-d.x0).attr('height', 21)
+    .attr('fill','transparent').attr('cursor','zoom-in')
+    .on('click', (event, d) => {
+      rootH.each(n => {
+        if (n.data.code === d.data.code && n.data.type === d.data.type)
+          focusNode = n;
+      });
+      document.getElementById('kri-panel').classList.remove('open');
+      render();
+      updateBreadcrumb();
+    });
+
+  // ── Tooltip ───────────────────────────────────────────────────────────────
+  nodeG.on('mouseover', (e, d) => {
+      const v = d.data.valoracion;
+      tip.innerHTML = `<b>${d.data.code}</b>
+        ${d.data.description ? `<br><span style="color:#94a3b8;font-size:.78rem">${d.data.description.substring(0,90)}…</span>` : ''}
+        <br>Val: <b style="color:${cmmiColor(v)}">${v!=null?Number(v).toFixed(1):'—'}</b>
+        &nbsp;·&nbsp;<span style="color:#94a3b8">${cmmiLabel(v)}</span>
+        <br><span style="color:#64748b;font-size:.75rem">${d.data.type==='subcategory'?'Click para ver KRIs':'Click para hacer drilldown'}</span>`;
+      tip.style.display='block';
+    })
+    .on('mousemove', e => {
+      tip.style.left=`${Math.min(e.clientX+14,window.innerWidth-270)}px`;
+      tip.style.top =`${Math.min(e.clientY+14,window.innerHeight-110)}px`;
+    })
+    .on('mouseout', () => tip.style.display='none');
+
+  // Hint update
+  const hints = { root:'Function> Category> Subcategory>',
+                  function:'Click en una Categoría para ver Subcategorías',
+                  category:'Click en una Subcategoría para ver sus KRIs' };
+  document.getElementById('hint').textContent = hints[focusNode.data.type] || '';
+
+  updateBreadcrumb();
+  window.onresize = render;
+}
+
+// ── Breadcrumb ────────────────────────────────────────────────────────────────
+function updateBreadcrumb(subData) {
+  // Build path from focusNode ancestors
+  const path = focusNode.ancestors().reverse(); // [root, fn?, cat?]
+
+  // If a subcategory was clicked, build the full path using its stored ancestors
+  let items;
+  if (subData) {
+    // Always show full chain: root → function → category → subcategory
+    items = [
+      { label: 'NIST CSF 2.0',                                                  navIdx: 0 },
+      { label: subData.fnName.toUpperCase(),                                     navCode: subData.fnCode, navType: 'function' },
+      { label: subData.catName.toUpperCase(),                                    navCode: subData.catCode, navType: 'category' },
+      { label: (subData.description||subData.code).substring(0,50).toUpperCase(), isCurrent: true },
+    ];
+  } else {
+    items = path.map((node, i) => ({
+      label: node.data.code === 'ROOT'
+        ? 'NIST CSF 2.0'
+        : (node.data.name || node.data.code).toUpperCase(),
+      navIdx: i,
+      isCurrent: i === path.length - 1,
+    }));
+  }
+
+  document.getElementById('breadcrumb').innerHTML = items.map((item, i) =>
+    `${i > 0 ? '<span class="bc-sep"> — </span>' : ''}
+     <span class="bc-item ${item.isCurrent ? 'current' : ''}"
+           data-i="${item.navIdx ?? -1}"
+           data-code="${item.navCode || ''}"
+           data-type="${item.navType || ''}">${item.label}</span>`
+  ).join('');
+
+  document.querySelectorAll('.bc-item:not(.current)').forEach(el => {
+    el.addEventListener('click', () => {
+      document.getElementById('kri-panel').classList.remove('open');
+      const code = el.dataset.code;
+      const type = el.dataset.type;
+      if (code) {
+        // Navigate to this node in the full hierarchy
+        rootH.each(n => {
+          if (n.data.code === code && n.data.type === type) focusNode = n;
+        });
+      } else {
+        focusNode = path[parseInt(el.dataset.i)] || rootH;
+      }
+      render();
+    });
+  });
+}
+
+// ── KRI Panel ────────────────────────────────────────────────────────────────
+async function openKriPanel(sub) {
+  updateBreadcrumb(sub);   // añade la subcategoría al breadcrumb sin cambiar focusNode
+  const panel = document.getElementById('kri-panel');
+  document.getElementById('kp-title').textContent = `${sub.fnName}  ·  ${sub.catName}`;
+  document.getElementById('kp-desc').textContent  = `${sub.code} — ${sub.description || ''}`;
+  document.getElementById('kp-list').innerHTML    =
+    '<div style="color:#94a3b8;font-size:.82rem">Cargando KRIs…</div>';
+  panel.classList.add('open');
+  panel.scrollIntoView({ behavior:'smooth', block:'start' });
+
+  try {
+    const rows = await (await fetch(`/api/kris?subcategoryId=${sub.subId}`)).json();
+    const kris = rows.filter(r => r.kri_id);
+
+    if (!kris.length) {
+      document.getElementById('kp-list').innerHTML =
+        '<div style="color:#64748b;font-style:italic;font-size:.85rem">Sin KRIs asignados.</div>';
+      return;
+    }
+
+    document.getElementById('kp-list').innerHTML = kris.map(k => {
+      const v   = k.valoracion != null ? Number(k.valoracion).toFixed(1) : null;
+      const col = cmmiColor(k.valoracion);
+      return `
+        <div class="kri-card">
+          <div style="font-weight:600;margin-bottom:.25rem">${k.kri_name}</div>
+          ${k.kri_description
+            ? `<div style="font-size:.78rem;color:#94a3b8;margin-bottom:.3rem">${k.kri_description}</div>` : ''}
+          ${k.kri_formula
+            ? `<div style="font-size:.75rem;color:#64748b;font-style:italic;margin-bottom:.35rem">Fórmula: ${k.kri_formula}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+            ${v != null
+              ? `<span style="font-weight:700;font-size:.95rem;padding:.1rem .45rem;
+                             border-radius:4px;background:${col};color:#fff">${v}</span>` : ''}
+            <span style="font-size:.78rem;color:#94a3b8">${cmmiLabel(k.valoracion)}</span>
+            ${k.last_saved_by
+              ? `<span style="font-size:.75rem;color:#64748b">· ${k.last_saved_by}</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } catch {
+    document.getElementById('kp-list').innerHTML =
+      '<div style="color:#ef4444;font-size:.85rem">Error al cargar.</div>';
+  }
+}
+</script>
 </body>
 </html>

@@ -28,7 +28,9 @@
       "Bash(node -e \"const r=require\\('./package.json'\\); console.log\\('express:', r.dependencies.express\\); console.log\\('serve-static:', require\\('./node_modules/serve-static/package.json'\\).version\\)\")",
       "Bash(npx kill-port:*)",
       "WebSearch",
-      "Bash(ipconfig)"
+      "Bash(ipconfig)",
+      "Bash(mv heatmap.html heatmap.html.bak)",
+      "Bash(mv treemap-animated.html heatmap.html)"
     ]
   }
 }
