@@ -714,10 +714,49 @@ tbody td {
 
 /* ── Responsive ──────────────────────────────────────────────────────────────── */
 @media (max-width: 640px) {
-  .heatmap-grid { grid-template-columns: repeat(2, 1fr); }
-  .heatmap-stats { gap: .5rem; }
-  .stat-card { min-width: 100px; padding: .75rem; }
-  .filters { flex-direction: column; }
-  .filter-group select, .filter-group input { min-width: 100%; }
-  .form-row { grid-template-columns: 1fr; }
+  /* ── Topbar ── */
+  .topbar { padding: 0 .75rem; gap: .5rem; }
+  .topbar-brand span { display: none; }          /* ocultar texto, dejar solo el escudo */
+  .topbar-nav a { padding: .4rem .5rem; font-size: .8rem; }
+  .topbar-user span > span { display: none; }    /* ocultar nombre de usuario */
+
+  /* ── Main ── */
+  .main { padding: .75rem; }
+  .page-header { margin-bottom: .75rem; }
+  .page-header h1 { font-size: 1.1rem; }
+
+  /* ── Stats ── */
+  .heatmap-stats { gap: .4rem; margin-bottom: .75rem; }
+  .stat-card { min-width: 0; flex: 1 1 calc(50% - .4rem); padding: .6rem .75rem; }
+  .stat-card .stat-value { font-size: 1.3rem; }
+  .stat-card .stat-label { font-size: .7rem; }
+
+  /* ── Filters ── */
+  .filters { flex-direction: column; gap: .5rem; }
+  .filter-group { width: 100%; }
+  .filter-group select,
+  .filter-group input { width: 100%; min-width: 0; }
+  .btn-reset { width: 100%; justify-content: center; }
+
+  /* ── Export bar (heatmap) ── */
+  #exportFormat { flex: 1; }
+
+  /* ── Table → tarjetas en móvil ── */
+  .table-wrapper { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  table { min-width: 600px; }          /* permite scroll horizontal si es necesario */
+
+  /* ── Modal ── */
+  .modal { margin: .5rem; width: calc(100vw - 1rem); max-width: none !important; }
+  .modal-body { padding: .75rem; }
+  .modal-footer { padding: .75rem; gap: .4rem; flex-wrap: wrap; }
+  .modal-footer .btn { flex: 1; min-width: 0; font-size: .82rem; }
+  .form-row { grid-template-columns: 1fr !important; }
+
+  /* ── Heatmap chart ── */
+  #treemapChart { height: calc(100vh - 280px) !important; min-height: 340px; }
+
+  /* ── Drilldown modal context grid ── */
+  .modal [style*="grid-template-columns:1fr 1fr"] {
+    grid-template-columns: 1fr !important;
+  }
 }

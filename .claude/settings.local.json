@@ -26,7 +26,9 @@
       "Bash(curl -s -b /tmp/kri-cookie.txt http://localhost:3000/api/heatmap)",
       "Bash(node -e \"const d=JSON.parse\\(require\\('fs'\\).readFileSync\\('/dev/stdin','utf8'\\)\\); console.log\\('Functions:', d.length\\); const fn=d[0]; console.log\\('First fn:', fn.code, 'avgVal:', fn.avgValoracion, 'cats:', fn.categories.length\\); const sub=fn.categories[0].subcategories[0]; console.log\\('First sub:', sub.code, 'val:', sub.valoracion, 'kri:', sub.kri_name\\);\")",
       "Bash(node -e \"const r=require\\('./package.json'\\); console.log\\('express:', r.dependencies.express\\); console.log\\('serve-static:', require\\('./node_modules/serve-static/package.json'\\).version\\)\")",
-      "Bash(npx kill-port:*)"
+      "Bash(npx kill-port:*)",
+      "WebSearch",
+      "Bash(ipconfig)"
     ]
   }
 }

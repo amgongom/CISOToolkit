@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Treemap Básico — D3.js</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    #chart { width:100%; height:calc(100vh - 220px); min-height:400px; }
+    .node rect { stroke:#0f172a; stroke-width:1px; }
+    .node text { pointer-events:none; font-family:'Segoe UI',system-ui,sans-serif; fill:#fff; }
+    .node:hover rect { opacity:.8; }
+    #tooltip {
+      position:fixed; display:none; pointer-events:none;
+      background:#0f172a; border:1px solid #334155; color:#f1f5f9;
+      border-radius:6px; padding:.5rem .75rem; font-size:.82rem;
+      font-family:'Segoe UI',system-ui,sans-serif; max-width:240px;
+      line-height:1.5; z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,.5);
+    }
+    .legend { display:flex; gap:.75rem; flex-wrap:wrap; margin-top:.75rem; font-size:.78rem; }
+    .legend-item { display:flex; align-items:center; gap:.35rem; }
+    .legend-dot { width:12px; height:12px; border-radius:3px; flex-shrink:0; }
+  </style>
+</head>
+<body>
+<div class="app-container">
+  <header class="topbar">
+    <a class="topbar-brand" href="/heatmap.html">
+      <div class="shield">🛡</div><span>Key Risk Indicators</span>
+    </a>
+    <nav class="topbar-nav">
+      <a href="/heatmap.html">Mapa de Calor</a>
+      <a href="/data.html">Datos</a>
+      <a href="/treemap-basic.html" class="active">① Básico</a>
+      <a href="/treemap-zoom.html">② Zoomable</a>
+      <a href="/treemap-animated.html">③ Animado</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-user">
+      <span>👤 <span id="topbarUser"></span></span>
+      <button class="btn-logout" id="logoutBtn">Salir</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="page-header" style="margin-bottom:.6rem">
+      <h1>① Treemap Básico — D3.js</h1>
+      <p>Vista completa: todas las subcategorías, coloreadas por nivel CMMI. Sin interacción.</p>
+    </div>
+    <div class="legend">
+      <div class="legend-item"><div class="legend-dot" style="background:#ef4444"></div>N1 Inicial (0–20)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#f97316"></div>N2 Gestionado (21–40)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#fbbf24"></div>N3 Definido (41–60)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#a3e635"></div>N4 Cuant. Gestionado (61–80)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#16a34a"></div>N5 Optimizado (81–100)</div>
+      <div class="legend-item"><div class="legend-dot" style="background:#475569"></div>Sin datos</div>
+    </div>
+    <div id="chart"></div>
+  </main>
+</div>
+<div id="tooltip"></div>
+
+<script src="/js/common.js"></script>
+<script>
+'use strict';
+
+// ── Color scale ───────────────────────────────────────────────────────────────
+function cmmiColor(v) {
+  if (v == null) return '#475569';
+  const stops = [[0,'#ef4444'],[20,'#f97316'],[40,'#fbbf24'],[60,'#a3e635'],[80,'#16a34a'],[100,'#16a34a']];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (v >= stops[i][0] && v <= stops[i+1][0]) {
+      return d3.interpolateRgb(stops[i][1], stops[i+1][1])((v - stops[i][0]) / (stops[i+1][0] - stops[i][0]));
+    }
+  }
+  return '#16a34a';
+}
+
+function cmmiLabel(v) {
+  if (v == null) return 'Sin datos';
+  if (v <= 20) return 'N1 Inicial';
+  if (v <= 40) return 'N2 Gestionado';
+  if (v <= 60) return 'N3 Definido';
+  if (v <= 80) return 'N4 Cuant. Gestionado';
+  return 'N5 Optimizado';
+}
+
+// ── Build D3 hierarchy ────────────────────────────────────────────────────────
+function buildHierarchy(api) {
+  return {
+    name: 'root', children: api.map(fn => ({
+      name: fn.name, code: fn.code, type:'function', valoracion: fn.avgValoracion,
+      children: fn.categories.map(cat => ({
+        name: cat.name, code: cat.code, type:'category', valoracion: cat.avgValoracion,
+        children: cat.subcategories.map(s => ({
+          name: s.code, code: s.code, type:'subcategory',
+          description: s.description, valoracion: s.valoracion,
+          kri_name: s.kri_name, value: 1,
+          fnCode: fn.code, catCode: cat.code
+        }))
+      }))
+    }))
+  };
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await initTopbar(null);
+
+  const api  = await (await fetch('/api/heatmap')).json();
+  const data = buildHierarchy(api);
+  const tip  = document.getElementById('tooltip');
+
+  const el = document.getElementById('chart');
+  const W  = el.clientWidth;
+  const H  = el.clientHeight || 500;
+
+  const root = d3.hierarchy(data)
+    .sum(d => d.value || 0)
+    .sort((a, b) => b.value - a.value);
+
+  d3.treemap()
+    .size([W, H])
+    .paddingOuter(6)
+    .paddingTop(20)
+    .paddingInner(2)
+    .tile(d3.treemapSquarify)
+    (root);
+
+  const svg = d3.select('#chart').append('svg')
+    .attr('width', W).attr('height', H)
+    .style('display','block');
+
+  // ── Function-level backgrounds + labels ─────────────────────────────────────
+  const fnNodes = root.children || [];
+  svg.selectAll('.fn-bg')
+    .data(fnNodes).join('rect')
+    .attr('class','fn-bg')
+    .attr('x', d => d.x0).attr('y', d => d.y0)
+    .attr('width', d => d.x1 - d.x0).attr('height', d => d.y1 - d.y0)
+    .attr('fill', d => d3.color(cmmiColor(d.data.valoracion)).darker(1.4))
+    .attr('rx', 4);
+
+  svg.selectAll('.fn-label')
+    .data(fnNodes).join('text')
+    .attr('class','fn-label')
+    .attr('x', d => d.x0 + 5).attr('y', d => d.y0 + 14)
+    .attr('font-size', 12).attr('font-weight', 700).attr('fill','#fff')
+    .attr('pointer-events','none')
+    .text(d => `${d.data.code} · ${d.data.name}`);
+
+  // ── Leaf nodes (subcategories) ───────────────────────────────────────────────
+  const leaves = root.leaves();
+  const node   = svg.selectAll('.node')
+    .data(leaves).join('g').attr('class','node')
+    .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+  node.append('rect')
+    .attr('width',  d => Math.max(0, d.x1 - d.x0))
+    .attr('height', d => Math.max(0, d.y1 - d.y0))
+    .attr('fill',   d => cmmiColor(d.data.valoracion))
+    .attr('rx', 2);
+
+  // Code label
+  node.append('text')
+    .attr('x', 3).attr('y', 12)
+    .attr('font-size', d => Math.min(10, Math.max(6, (d.x1-d.x0)/5)))
+    .attr('font-weight', 700)
+    .text(d => d.data.code)
+    .each(function(d) {
+      const maxW = d.x1 - d.x0 - 6;
+      while (this.getComputedTextLength() > maxW && this.textContent.length > 1)
+        this.textContent = this.textContent.slice(0, -2) + '…';
+    });
+
+  // Value label (if space)
+  node.filter(d => (d.y1-d.y0) > 26 && (d.x1-d.x0) > 30)
+    .append('text')
+    .attr('x', 3).attr('y', 24)
+    .attr('font-size', 9).attr('fill','rgba(255,255,255,.85)')
+    .text(d => d.data.valoracion != null ? Number(d.data.valoracion).toFixed(1) : '—');
+
+  // Tooltip
+  node.on('mouseover', (e, d) => {
+    tip.innerHTML = `<b>${d.data.code}</b><br>
+      <span style="color:#94a3b8">${d.data.description || ''}</span><br>
+      ${d.data.kri_name ? `KRI: <i>${d.data.kri_name}</i><br>` : ''}
+      Valoración: <b style="color:${cmmiColor(d.data.valoracion)}">${d.data.valoracion != null ? Number(d.data.valoracion).toFixed(1) : '—'}</b>
+      &nbsp;·&nbsp; ${cmmiLabel(d.data.valoracion)}`;
+    tip.style.display = 'block';
+  })
+  .on('mousemove', e => {
+    tip.style.left = `${Math.min(e.clientX+14, window.innerWidth-250)}px`;
+    tip.style.top  = `${Math.min(e.clientY+14, window.innerHeight-100)}px`;
+  })
+  .on('mouseout', () => tip.style.display = 'none');
+
+})();
+</script>
+</body>
+</html>

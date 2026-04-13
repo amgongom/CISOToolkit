@@ -1,0 +1,542 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Treemap D3 — NIST CSF 2.0</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    #tm-wrap {
+      position: relative;
+      width: 100%;
+      height: calc(100vh - 210px);
+      min-height: 420px;
+      background: #1e293b;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 1px solid #475569;
+    }
+
+    #tm-svg { display: block; width: 100%; height: 100%; }
+
+    /* ── Nodes ── */
+    .tm-node rect {
+      stroke: #0f172a;
+      stroke-width: 1px;
+      transition: opacity .15s;
+    }
+    .tm-node:hover rect { opacity: .85; }
+    .tm-node { cursor: pointer; }
+    .tm-node.leaf { cursor: pointer; }
+
+    .tm-label {
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      fill: #fff;
+      pointer-events: none;
+      dominant-baseline: hanging;
+    }
+    .tm-label.code   { font-weight: 700; }
+    .tm-label.name   { font-weight: 400; fill: rgba(255,255,255,.75); }
+    .tm-label.val    { font-weight: 700; fill: #fff; }
+
+    /* ── Breadcrumb ── */
+    #tm-breadcrumb {
+      display: flex; align-items: center; gap: .4rem;
+      padding: .5rem .75rem; flex-wrap: wrap;
+      background: #1e293b; border: 1px solid #475569;
+      border-radius: 8px; margin-bottom: .75rem;
+      font-size: .85rem;
+    }
+    .bc-item {
+      color: #3b82f6; cursor: pointer; padding: .2rem .4rem;
+      border-radius: 4px; transition: background .15s;
+    }
+    .bc-item:hover { background: #334155; }
+    .bc-item.current { color: #f1f5f9; cursor: default; font-weight: 600; }
+    .bc-sep { color: #475569; }
+
+    /* ── KRI Panel ── */
+    #kri-panel {
+      display: none;
+      background: #1e293b; border: 1px solid #475569;
+      border-radius: 8px; padding: 1rem;
+      margin-top: .75rem;
+    }
+    #kri-panel.visible { display: block; }
+    .kri-panel-header {
+      display: flex; justify-content: space-between; align-items: flex-start;
+      margin-bottom: .75rem; padding-bottom: .6rem;
+      border-bottom: 1px solid #475569;
+    }
+    .kri-panel-close {
+      background: none; border: none; color: #94a3b8;
+      cursor: pointer; font-size: 1.1rem; padding: 0 .25rem;
+      line-height: 1;
+    }
+    .kri-panel-close:hover { color: #f1f5f9; }
+    .kri-card {
+      background: #0f172a; border: 1px solid #334155;
+      border-radius: 6px; padding: .75rem; margin-bottom: .5rem;
+    }
+    .kri-card:last-child { margin-bottom: 0; }
+    .kri-card-title { font-weight: 600; font-size: .88rem; margin-bottom: .3rem; }
+    .kri-card-desc  { font-size: .78rem; color: #94a3b8; margin-bottom: .4rem; line-height: 1.4; }
+    .kri-card-meta  {
+      display: flex; gap: .75rem; align-items: center;
+      font-size: .8rem; flex-wrap: wrap;
+    }
+    .kri-badge-val {
+      font-weight: 700; font-size: 1rem;
+      padding: .15rem .5rem; border-radius: 4px;
+      color: #fff;
+    }
+    .kri-badge-lvl {
+      font-size: .75rem; color: #94a3b8;
+    }
+    .no-kri {
+      color: #64748b; font-style: italic; font-size: .85rem;
+      padding: .5rem 0;
+    }
+
+    /* ── Tooltip ── */
+    #tm-tooltip {
+      position: fixed; pointer-events: none;
+      background: #0f172a; border: 1px solid #334155;
+      color: #f1f5f9; border-radius: 6px;
+      padding: .5rem .75rem; font-size: .82rem;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      max-width: 260px; line-height: 1.5;
+      z-index: 9999; display: none;
+      box-shadow: 0 4px 16px rgba(0,0,0,.5);
+    }
+
+    /* ── Stats ── */
+    .tm-stats {
+      display: flex; gap: .75rem; margin-bottom: .75rem; flex-wrap: wrap;
+    }
+    .tm-stat {
+      background: #1e293b; border: 1px solid #475569;
+      border-radius: 8px; padding: .6rem 1rem; flex: 1; min-width: 120px;
+    }
+    .tm-stat-val { font-size: 1.4rem; font-weight: 700; color: #3b82f6; }
+    .tm-stat-lbl { font-size: .72rem; color: #94a3b8; margin-top: .1rem; }
+
+    @media (max-width: 640px) {
+      #tm-wrap { height: calc(100vh - 300px); min-height: 320px; }
+      .tm-stats { gap: .4rem; }
+      .tm-stat { flex: 1 1 calc(50% - .4rem); padding: .5rem .6rem; }
+      .tm-stat-val { font-size: 1.1rem; }
+    }
+  </style>
+</head>
+<body>
+<div class="app-container">
+
+  <header class="topbar">
+    <a class="topbar-brand" href="/heatmap.html">
+      <div class="shield">🛡</div>
+      <span>Key Risk Indicators</span>
+    </a>
+    <nav class="topbar-nav">
+      <a href="/heatmap.html"  data-page="heatmap">Mapa de Calor</a>
+      <a href="/treemap.html"  data-page="treemap" class="active">Treemap D3</a>
+      <a href="/data.html"     data-page="data">Datos</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-user">
+      <span>👤 <span id="topbarUser"></span></span>
+      <button class="btn-logout" id="logoutBtn">Salir</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="page-header" style="margin-bottom:.75rem">
+      <h1>NIST Cybersecurity Framework 2.0</h1>
+      <p>Treemap interactivo — D3.js v7 · Click para hacer drilldown</p>
+    </div>
+
+    <!-- Stats -->
+    <div class="tm-stats" id="tmStats"></div>
+
+    <!-- Breadcrumb -->
+    <div id="tm-breadcrumb"></div>
+
+    <!-- Treemap -->
+    <div id="tm-wrap">
+      <svg id="tm-svg"></svg>
+    </div>
+
+    <!-- KRI Panel -->
+    <div id="kri-panel">
+      <div class="kri-panel-header">
+        <div>
+          <div style="font-weight:700;font-size:.95rem" id="kp-code"></div>
+          <div style="font-size:.8rem;color:#94a3b8;margin-top:.15rem" id="kp-desc"></div>
+        </div>
+        <button class="kri-panel-close" id="kp-close">✕</button>
+      </div>
+      <div id="kp-list"></div>
+    </div>
+  </main>
+</div>
+
+<div id="tm-tooltip"></div>
+
+<script src="/js/common.js"></script>
+<script>
+'use strict';
+
+// ── Color scale (same CMMI logic as the rest of the app) ─────────────────────
+const CMMI_STOPS = [
+  { v:   0, r: 239, g:  68, b:  68 },
+  { v:  20, r: 249, g: 115, b:  22 },
+  { v:  40, r: 251, g: 191, b:  36 },
+  { v:  60, r: 163, g: 230, b:  53 },
+  { v:  80, r:  22, g: 163, b:  74 },
+  { v: 100, r:  22, g: 163, b:  74 },
+];
+
+function cmmiColor(val) {
+  if (val == null) return '#475569';
+  const v = Math.max(0, Math.min(100, val));
+  let lo = CMMI_STOPS[0], hi = CMMI_STOPS[CMMI_STOPS.length - 1];
+  for (let i = 0; i < CMMI_STOPS.length - 1; i++) {
+    if (v >= CMMI_STOPS[i].v && v <= CMMI_STOPS[i + 1].v) {
+      lo = CMMI_STOPS[i]; hi = CMMI_STOPS[i + 1]; break;
+    }
+  }
+  const t = lo.v === hi.v ? 0 : (v - lo.v) / (hi.v - lo.v);
+  const r = Math.round(lo.r + t * (hi.r - lo.r));
+  const g = Math.round(lo.g + t * (hi.g - lo.g));
+  const b = Math.round(lo.b + t * (hi.b - lo.b));
+  return `rgb(${r},${g},${b})`;
+}
+
+function cmmiLabel(val) {
+  if (val == null) return '—';
+  if (val <= 20) return 'N1 Inicial';
+  if (val <= 40) return 'N2 Gestionado';
+  if (val <= 60) return 'N3 Definido';
+  if (val <= 80) return 'N4 Cuant. Gestionado';
+  return 'N5 Optimizado';
+}
+
+// ── Convert API data → D3 hierarchy input ────────────────────────────────────
+function buildTree(apiData) {
+  return {
+    name: 'NIST CSF 2.0', code: 'ROOT', type: 'root',
+    children: apiData.map(fn => ({
+      name: fn.name, code: fn.code, type: 'function',
+      valoracion: fn.avgValoracion,
+      children: fn.categories.map(cat => ({
+        name: cat.name, code: cat.code, type: 'category',
+        valoracion: cat.avgValoracion,
+        children: cat.subcategories.map(sub => ({
+          name: sub.code, code: sub.code, type: 'subcategory',
+          description: sub.description,
+          valoracion: sub.valoracion,
+          kri_id: sub.kri_id, kri_name: sub.kri_name,
+          subId: sub.id, value: 1,
+          fnCode: fn.code, fnName: fn.name,
+          catCode: cat.code, catName: cat.name,
+        }))
+      }))
+    }))
+  };
+}
+
+// ── State ─────────────────────────────────────────────────────────────────────
+let rootNode  = null;   // d3.hierarchy root
+let focusNode = null;   // currently zoomed node
+const tooltip = document.getElementById('tm-tooltip');
+
+// ── Boot ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await initTopbar(null);
+  try {
+    const res  = await fetch('/api/heatmap');
+    const data = await res.json();
+    const tree = buildTree(data);
+
+    rootNode = d3.hierarchy(tree)
+      .sum(d => d.value || 0)
+      .sort((a, b) => b.value - a.value);
+
+    focusNode = rootNode;
+    renderStats(data);
+    renderBreadcrumb();
+    renderTreemap();
+
+    window.addEventListener('resize', renderTreemap);
+    document.getElementById('kp-close').addEventListener('click', () => {
+      document.getElementById('kri-panel').classList.remove('visible');
+    });
+  } catch (e) {
+    document.getElementById('tm-wrap').innerHTML =
+      `<div style="padding:2rem;color:#ef4444">Error al cargar datos: ${e.message}</div>`;
+  }
+})();
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+function renderStats(data) {
+  let total = 0, withKri = 0, n1 = 0;
+  const vals = [];
+  data.forEach(fn => fn.categories.forEach(cat => cat.subcategories.forEach(s => {
+    total++;
+    if (s.valoracion != null) { withKri++; vals.push(s.valoracion); if (s.valoracion <= 20) n1++; }
+  })));
+  const avg = vals.length ? (vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1) : '—';
+  document.getElementById('tmStats').innerHTML = `
+    <div class="tm-stat"><div class="tm-stat-val">${total}</div><div class="tm-stat-lbl">Total subcategorías</div></div>
+    <div class="tm-stat"><div class="tm-stat-val">${withKri}/${total}</div><div class="tm-stat-lbl">Con KRI asignado</div></div>
+    <div class="tm-stat"><div class="tm-stat-val" style="color:${cmmiColor(parseFloat(avg))}">${avg}</div><div class="tm-stat-lbl">Valoración promedio</div></div>
+    <div class="tm-stat"><div class="tm-stat-val" style="color:#ef4444">${n1}</div><div class="tm-stat-lbl">Nivel N1 (crítico)</div></div>`;
+}
+
+// ── Breadcrumb ────────────────────────────────────────────────────────────────
+function renderBreadcrumb() {
+  const path    = focusNode.ancestors().reverse();
+  const bc      = document.getElementById('tm-breadcrumb');
+  bc.innerHTML  = path.map((node, i) => {
+    const isLast = i === path.length - 1;
+    const label  = node.data.code === 'ROOT' ? 'NIST CSF 2.0' : `${node.data.code}`;
+    return `
+      ${i > 0 ? '<span class="bc-sep">›</span>' : ''}
+      <span class="bc-item ${isLast ? 'current' : ''}"
+            data-depth="${i}">${label}</span>`;
+  }).join('');
+
+  bc.querySelectorAll('.bc-item:not(.current)').forEach((el, i) => {
+    el.addEventListener('click', () => {
+      focusNode = path[parseInt(el.dataset.depth)];
+      document.getElementById('kri-panel').classList.remove('visible');
+      renderBreadcrumb();
+      renderTreemap();
+    });
+  });
+}
+
+// ── Treemap ───────────────────────────────────────────────────────────────────
+function renderTreemap() {
+  const wrap = document.getElementById('tm-wrap');
+  const svg  = d3.select('#tm-svg');
+  svg.selectAll('*').remove();
+
+  const W = wrap.clientWidth;
+  const H = wrap.clientHeight;
+
+  // Re-compute layout from focusNode
+  const focus = d3.hierarchy(focusNode.data)
+    .sum(d => d.value || 0)
+    .sort((a, b) => b.value - a.value);
+
+  const isLeafFocus = !focus.children;
+
+  const layout = d3.treemap()
+    .size([W, H])
+    .paddingOuter(focusNode === rootNode ? 4 : 2)
+    .paddingTop(d => d.depth === 1 ? 22 : 1)
+    .paddingInner(2)
+    .round(true);
+
+  layout(focus);
+
+  const g = svg.append('g');
+
+  // ── Render parent groups (depth 1) ─────────────────────────────────────────
+  const parents = focus.descendants().filter(d => d.depth === 1 && d.children);
+
+  parents.forEach(p => {
+    // Parent background + header
+    g.append('rect')
+      .attr('x', p.x0).attr('y', p.y0)
+      .attr('width', p.x1 - p.x0).attr('height', p.y1 - p.y0)
+      .attr('fill', d3.color(cmmiColor(p.data.valoracion)).darker(1.2))
+      .attr('rx', 4);
+
+    // Header label
+    const hw = p.x1 - p.x0;
+    if (hw > 40) {
+      g.append('text')
+        .attr('class', 'tm-label code')
+        .attr('x', p.x0 + 6).attr('y', p.y0 + 5)
+        .attr('font-size', Math.min(13, hw / 6))
+        .text(`${p.data.code}`)
+        .each(function() { clipText(this, hw - 12); });
+
+      if (hw > 120) {
+        g.append('text')
+          .attr('class', 'tm-label name')
+          .attr('x', p.x0 + 6 + Math.min(13, hw / 6) * (p.data.code.length * 0.6 + 0.5))
+          .attr('y', p.y0 + 5)
+          .attr('font-size', Math.min(11, hw / 8))
+          .text(`· ${p.data.name}`)
+          .each(function() { clipText(this, hw - 80); });
+      }
+    }
+  });
+
+  // ── Render leaves ──────────────────────────────────────────────────────────
+  const leaves = focus.leaves();
+
+  const nodeG = g.selectAll('.tm-node')
+    .data(leaves)
+    .join('g')
+    .attr('class', d => `tm-node${d.children ? '' : ' leaf'}`)
+    .attr('transform', d => `translate(${d.x0},${d.y0})`);
+
+  nodeG.append('rect')
+    .attr('width',  d => Math.max(0, d.x1 - d.x0))
+    .attr('height', d => Math.max(0, d.y1 - d.y0))
+    .attr('fill',   d => cmmiColor(d.data.valoracion))
+    .attr('rx', 2);
+
+  // Labels inside leaves
+  nodeG.each(function(d) {
+    const nw = d.x1 - d.x0, nh = d.y1 - d.y0;
+    if (nw < 18 || nh < 12) return;
+    const ng = d3.select(this);
+    const fs = Math.min(11, Math.max(7, nw / 5));
+
+    ng.append('text')
+      .attr('class', 'tm-label code')
+      .attr('x', 4).attr('y', 4)
+      .attr('font-size', fs)
+      .text(d.data.code)
+      .each(function() { clipText(this, nw - 8); });
+
+    if (nh > 28 && nw > 40 && d.data.valoracion != null) {
+      ng.append('text')
+        .attr('class', 'tm-label val')
+        .attr('x', 4).attr('y', fs + 7)
+        .attr('font-size', Math.min(fs + 1, 12))
+        .text(Number(d.data.valoracion).toFixed(1))
+        .each(function() { clipText(this, nw - 8); });
+    }
+  });
+
+  // ── Invisible overlay for parent clicks (drill in) ─────────────────────────
+  if (focusNode.depth < 2) {
+    // Show parent-level click areas for drill-down
+    const clickTargets = focus.descendants().filter(d => d.depth === 1 && d.children);
+    g.selectAll('.tm-click-parent')
+      .data(clickTargets)
+      .join('rect')
+      .attr('class', 'tm-click-parent')
+      .attr('x', d => d.x0).attr('y', d => d.y0)
+      .attr('width', d => d.x1 - d.x0).attr('height', 20)
+      .attr('fill', 'transparent')
+      .attr('cursor', 'pointer')
+      .on('click', (event, d) => {
+        event.stopPropagation();
+        drillTo(d.data.code);
+      })
+      .on('mouseover', (event, d) => showTooltip(event, d))
+      .on('mousemove', (event) => moveTooltip(event))
+      .on('mouseout',  () => hideTooltip());
+  }
+
+  // ── Leaf click → KRI panel ─────────────────────────────────────────────────
+  nodeG.on('click', (event, d) => {
+    event.stopPropagation();
+    if (d.data.type === 'subcategory') {
+      openKriPanel(d.data);
+    } else {
+      drillTo(d.data.code);
+    }
+  })
+  .on('mouseover', (event, d) => showTooltip(event, d))
+  .on('mousemove', (event) => moveTooltip(event))
+  .on('mouseout',  () => hideTooltip());
+}
+
+// ── Drill down/up ─────────────────────────────────────────────────────────────
+function drillTo(code) {
+  // Find matching node in full hierarchy
+  let found = null;
+  rootNode.each(d => { if (d.data.code === code) found = d; });
+  if (!found || found === focusNode) return;
+
+  // Rebuild focusNode pointing to same subtree but from rootNode
+  focusNode = found;
+  document.getElementById('kri-panel').classList.remove('visible');
+  renderBreadcrumb();
+  renderTreemap();
+}
+
+// ── KRI Panel ─────────────────────────────────────────────────────────────────
+async function openKriPanel(sub) {
+  const panel = document.getElementById('kri-panel');
+  document.getElementById('kp-code').textContent = `${sub.code}  ·  ${sub.catCode} · ${sub.catName}  ·  ${sub.fnCode}`;
+  document.getElementById('kp-desc').textContent = sub.description || '';
+  document.getElementById('kp-list').innerHTML   = '<div style="color:#94a3b8;font-size:.82rem">Cargando KRIs...</div>';
+  panel.classList.add('visible');
+
+  try {
+    const res  = await fetch(`/api/kris?subcategoryId=${sub.subId}`);
+    const rows = await res.json();
+    const kris = rows.filter(r => r.kri_id);
+
+    if (!kris.length) {
+      document.getElementById('kp-list').innerHTML =
+        '<div class="no-kri">Sin KRIs asignados a esta subcategoría.</div>';
+      return;
+    }
+
+    document.getElementById('kp-list').innerHTML = kris.map(k => {
+      const val   = k.valoracion != null ? Number(k.valoracion).toFixed(1) : null;
+      const color = cmmiColor(k.valoracion);
+      const lvl   = k.valoracion != null ? cmmiLabel(k.valoracion) : '—';
+      const desc  = k.kri_description
+        ? `<div class="kri-card-desc">${k.kri_description}</div>` : '';
+      const formula = k.kri_formula
+        ? `<div style="font-size:.75rem;color:#64748b;font-style:italic">Fórmula: ${k.kri_formula}</div>` : '';
+      return `
+        <div class="kri-card">
+          <div class="kri-card-title">${k.kri_name}</div>
+          ${desc}${formula}
+          <div class="kri-card-meta">
+            ${val != null ? `<span class="kri-badge-val" style="background:${color}">${val}</span>` : ''}
+            <span class="kri-badge-lvl">${lvl}</span>
+            ${k.last_saved_by ? `<span style="color:#64748b;font-size:.75rem">por ${k.last_saved_by}</span>` : ''}
+          </div>
+        </div>`;
+    }).join('');
+  } catch {
+    document.getElementById('kp-list').innerHTML =
+      '<div class="no-kri" style="color:#ef4444">Error al cargar KRIs.</div>';
+  }
+}
+
+// ── Tooltip ───────────────────────────────────────────────────────────────────
+function showTooltip(event, d) {
+  const data = d.data;
+  const val  = data.valoracion != null ? Number(data.valoracion).toFixed(1) : '—';
+  const lvl  = data.valoracion != null ? cmmiLabel(data.valoracion) : 'Sin datos';
+  const color = cmmiColor(data.valoracion);
+  tooltip.innerHTML = `
+    <b>${data.code}</b>  <span style="color:#94a3b8;font-size:.78rem">${data.name || data.description || ''}</span>
+    <br>Valoración: <b style="color:${color}">${val}</b> · <span style="color:#94a3b8">${lvl}</span>
+    ${data.type !== 'subcategory' ? `<br><span style="color:#64748b;font-size:.75rem">Click para ver detalle</span>` : ''}`;
+  tooltip.style.display = 'block';
+  moveTooltip(event);
+}
+function moveTooltip(event) {
+  const x = event.clientX + 14, y = event.clientY + 14;
+  tooltip.style.left = `${Math.min(x, window.innerWidth - 280)}px`;
+  tooltip.style.top  = `${Math.min(y, window.innerHeight - 100)}px`;
+}
+function hideTooltip() { tooltip.style.display = 'none'; }
+
+// ── Clip text to width ────────────────────────────────────────────────────────
+function clipText(el, maxW) {
+  const t = el.textContent;
+  for (let i = t.length; i > 0; i--) {
+    el.textContent = t.slice(0, i) + (i < t.length ? '…' : '');
+    if (el.getComputedTextLength() <= maxW) break;
+  }
+}
+</script>
+</body>
+</html>

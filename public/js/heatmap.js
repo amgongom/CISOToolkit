@@ -13,6 +13,7 @@ let editingKriId = null;
   await initTopbar('heatmap');
   await loadData();
   bindModal();
+  document.getElementById('btnExport').addEventListener('click', exportHeatmap);
 })();
 
 // ── Load data & render ────────────────────────────────────────────────────────
@@ -359,6 +360,24 @@ async function deleteKri() {
   } catch {
     toast('Error al eliminar', 'error');
   }
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+async function exportHeatmap() {
+  const format = document.getElementById('exportFormat').value;
+  // Fetch all KRI rows (no filters — heatmap shows full dataset)
+  let rows;
+  try {
+    const res = await fetch('/api/kris');
+    rows = await res.json();
+  } catch (e) {
+    toast('Error al obtener datos', 'error');
+    return;
+  }
+  if (format === 'json')      exportJSON(rows);
+  else if (format === 'csv')  exportCSV(rows);
+  else if (format === 'xml')  exportXML(rows);
+  else if (format === 'xlsx') await exportExcelFile(new URLSearchParams(), 'btnExport');
 }
 
 // ── Subcategory Drilldown ─────────────────────────────────────────────────────

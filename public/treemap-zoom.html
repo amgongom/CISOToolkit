@@ -1,0 +1,372 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Treemap Zoomable — D3.js</title>
+  <link rel="stylesheet" href="/css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/d3@7/dist/d3.min.js"></script>
+  <style>
+    #chart { width:100%; height:calc(100vh - 200px); min-height:420px; }
+    svg { display:block; }
+    .tm-node { cursor:pointer; }
+    .tm-node rect { stroke:#0f172a; }
+    .tm-node text { pointer-events:none; font-family:'Segoe UI',system-ui,sans-serif; fill:#fff; }
+    .tm-node:hover > rect { opacity:.85; }
+    .tm-home {
+      position:absolute; top:8px; right:10px;
+      background:rgba(15,23,42,.8); border:1px solid #475569;
+      color:#f1f5f9; border-radius:6px; padding:.3rem .65rem;
+      font-size:.8rem; cursor:pointer; display:none;
+    }
+    .tm-home:hover { background:#1e293b; }
+    #tm-hint {
+      position:absolute; bottom:10px; left:50%; transform:translateX(-50%);
+      background:rgba(15,23,42,.75); border:1px solid #334155;
+      color:#94a3b8; border-radius:20px; padding:.3rem .9rem;
+      font-size:.76rem; pointer-events:none; white-space:nowrap;
+    }
+    #tooltip {
+      position:fixed; display:none; pointer-events:none;
+      background:#0f172a; border:1px solid #334155; color:#f1f5f9;
+      border-radius:6px; padding:.5rem .75rem; font-size:.82rem;
+      font-family:'Segoe UI',system-ui,sans-serif; max-width:240px;
+      line-height:1.5; z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,.5);
+    }
+    #kri-panel {
+      display:none; background:#1e293b; border:1px solid #475569;
+      border-radius:8px; padding:1rem; margin-top:.75rem;
+    }
+    #kri-panel.visible { display:block; }
+    .kri-card {
+      background:#0f172a; border:1px solid #334155;
+      border-radius:6px; padding:.75rem; margin-bottom:.5rem;
+    }
+    .kri-card:last-child { margin-bottom:0; }
+    .kri-badge {
+      display:inline-block; font-weight:700; font-size:.95rem;
+      padding:.1rem .45rem; border-radius:4px; color:#fff; margin-right:.5rem;
+    }
+  </style>
+</head>
+<body>
+<div class="app-container">
+  <header class="topbar">
+    <a class="topbar-brand" href="/heatmap.html">
+      <div class="shield">🛡</div><span>Key Risk Indicators</span>
+    </a>
+    <nav class="topbar-nav">
+      <a href="/heatmap.html">Mapa de Calor</a>
+      <a href="/data.html">Datos</a>
+      <a href="/treemap-basic.html">① Básico</a>
+      <a href="/treemap-zoom.html" class="active">② Zoomable</a>
+      <a href="/treemap-animated.html">③ Animado</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-user">
+      <span>👤 <span id="topbarUser"></span></span>
+      <button class="btn-logout" id="logoutBtn">Salir</button>
+    </div>
+  </header>
+
+  <main class="main">
+    <div class="page-header" style="margin-bottom:.6rem">
+      <h1>② Treemap Zoomable — D3.js</h1>
+      <p>Click en cualquier nodo para hacer zoom · Click en el header para subir un nivel</p>
+    </div>
+
+    <div style="position:relative">
+      <div id="chart"></div>
+      <button class="tm-home" id="btnHome">⌂ Inicio</button>
+      <div id="tm-hint">Click en un rectángulo para hacer drilldown</div>
+    </div>
+
+    <div id="kri-panel">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:.75rem;padding-bottom:.6rem;border-bottom:1px solid #475569">
+        <div>
+          <div style="font-weight:700" id="kp-title"></div>
+          <div style="font-size:.8rem;color:#94a3b8;margin-top:.1rem" id="kp-desc"></div>
+        </div>
+        <button style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.1rem" id="kp-close">✕</button>
+      </div>
+      <div id="kp-list"></div>
+    </div>
+  </main>
+</div>
+<div id="tooltip"></div>
+
+<script src="/js/common.js"></script>
+<script>
+'use strict';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function cmmiColor(v) {
+  if (v == null) return '#475569';
+  const stops = [[0,'#ef4444'],[20,'#f97316'],[40,'#fbbf24'],[60,'#a3e635'],[80,'#16a34a'],[100,'#16a34a']];
+  for (let i = 0; i < stops.length - 1; i++) {
+    if (v >= stops[i][0] && v <= stops[i+1][0])
+      return d3.interpolateRgb(stops[i][1], stops[i+1][1])((v - stops[i][0]) / (stops[i+1][0] - stops[i][0]));
+  }
+  return '#16a34a';
+}
+function cmmiLabel(v) {
+  if (v == null) return 'Sin datos';
+  if (v <= 20) return 'N1 Inicial';
+  if (v <= 40) return 'N2 Gestionado';
+  if (v <= 60) return 'N3 Definido';
+  if (v <= 80) return 'N4 Cuant. Gestionado';
+  return 'N5 Optimizado';
+}
+
+function buildHierarchy(api) {
+  return {
+    name:'NIST CSF 2.0', code:'ROOT', type:'root',
+    children: api.map(fn => ({
+      name:fn.name, code:fn.code, type:'function', valoracion:fn.avgValoracion,
+      children: fn.categories.map(cat => ({
+        name:cat.name, code:cat.code, type:'category', valoracion:cat.avgValoracion,
+        children: cat.subcategories.map(s => ({
+          name:s.code, code:s.code, type:'subcategory',
+          description:s.description, valoracion:s.valoracion,
+          kri_name:s.kri_name, subId:s.id,
+          fnCode:fn.code, catCode:cat.code, catName:cat.name, fnName:fn.name,
+          value:1
+        }))
+      }))
+    }))
+  };
+}
+
+// ── UID helper (replaces Observable's DOM.uid) ────────────────────────────────
+let _uid = 0;
+function uid(prefix) {
+  const id = `${prefix}-${++_uid}`;
+  return { id, href: `#${id}`, toString: () => `url(#${id})` };
+}
+
+// ── Main ──────────────────────────────────────────────────────────────────────
+(async () => {
+  await initTopbar(null);
+
+  const api  = await (await fetch('/api/heatmap')).json();
+  const tree = buildHierarchy(api);
+  const tip  = document.getElementById('tooltip');
+  const el   = document.getElementById('chart');
+
+  let W = el.clientWidth;
+  let H = el.clientHeight || window.innerHeight - 220;
+  el.style.height = H + 'px';
+
+  // ── Layout ──────────────────────────────────────────────────────────────────
+  const treemapLayout = data =>
+    d3.treemap()
+      .tile(d3.treemapResquarify)
+      .size([W, H])
+      .paddingTop(28)
+      .paddingInner(3)
+      .paddingOuter(3)
+      .round(true)
+    (d3.hierarchy(data)
+      .sum(d => d.value || 0)
+      .sort((a, b) => b.value - a.value));
+
+  const rootH = treemapLayout(tree);
+
+  // ── Scales (key to the zoom effect) ─────────────────────────────────────────
+  const x = d3.scaleLinear().rangeRound([0, W]);
+  const y = d3.scaleLinear().rangeRound([0, H]);
+
+  const svg = d3.select('#chart').append('svg')
+    .attr('viewBox', `0 0 ${W} ${H}`)
+    .attr('width', W).attr('height', H)
+    .style('display','block')
+    .style('font', '12px Segoe UI,system-ui,sans-serif');
+
+  let group = svg.append('g');
+
+  // ── Render function ──────────────────────────────────────────────────────────
+  function render(grp, root) {
+    const children = root.children || [];
+    const data = children.concat(root); // children + root (shown as header)
+
+    const node = grp.selectAll('g')
+      .data(data).join('g');
+
+    // Cursor & click
+    node.filter(d => d === root ? !!d.parent : !!d.children || d.data.type === 'subcategory')
+      .attr('cursor', 'pointer')
+      .on('click', (event, d) => {
+        tooltip.style.display = 'none';
+        if (d === root) {
+          if (d.parent) zoomOut(root);
+        } else if (d.data.type === 'subcategory') {
+          openKriPanel(d.data);
+        } else {
+          zoomIn(d);
+        }
+      });
+
+    // Tooltip
+    node.filter(d => d !== root)
+      .on('mouseover', (e, d) => {
+        const v = d.data.valoracion;
+        tip.innerHTML = `<b>${d.data.code}</b>
+          ${d.data.name && d.data.name !== d.data.code ? `<br><span style="color:#94a3b8">${d.data.name}</span>` : ''}
+          ${d.data.description ? `<br><span style="color:#94a3b8;font-size:.78rem">${d.data.description.substring(0,80)}${d.data.description.length>80?'…':''}</span>` : ''}
+          <br>Val: <b style="color:${cmmiColor(v)}">${v!=null?Number(v).toFixed(1):'—'}</b>
+          &nbsp;·&nbsp;<span style="color:#94a3b8">${cmmiLabel(v)}</span>
+          ${d.data.type !== 'subcategory' ? '<br><span style="color:#64748b;font-size:.75rem">Click para hacer drilldown</span>' : ''}`;
+        tip.style.display = 'block';
+      })
+      .on('mousemove', e => {
+        tip.style.left = `${Math.min(e.clientX+14, window.innerWidth-250)}px`;
+        tip.style.top  = `${Math.min(e.clientY+14, window.innerHeight-100)}px`;
+      })
+      .on('mouseout', () => tip.style.display = 'none');
+
+    // Rects
+    node.append('rect')
+      .attr('id', d => (d.rectUid = uid('rect')).id)
+      .attr('fill', d => {
+        if (d === root) return '#0f172a';
+        if (d.data.type === 'function')   return d3.color(cmmiColor(d.data.valoracion)).darker(1.2);
+        if (d.data.type === 'category')   return d3.color(cmmiColor(d.data.valoracion)).darker(.8);
+        return cmmiColor(d.data.valoracion);
+      })
+      .attr('stroke', '#0f172a')
+      .attr('stroke-width', d => d === root ? 0 : 1)
+      .attr('rx', d => d === root ? 0 : 3);
+
+    // Clip paths
+    node.append('clipPath')
+      .attr('id', d => (d.clipUid = uid('clip')).id)
+      .append('use').attr('href', d => d.rectUid.href);
+
+    // Labels
+    node.append('text')
+      .attr('clip-path', d => d.clipUid)
+      .attr('font-weight', d => d === root ? 700 : 600)
+      .attr('font-size',   d => d === root ? 14 : Math.min(12, Math.max(7, (x(d.x1)-x(d.x0)) / 5)))
+      .attr('fill', '#fff')
+      .selectAll('tspan')
+      .data(d => {
+        if (d === root) return [`${d.data.code === 'ROOT' ? 'NIST CSF 2.0' : d.data.code} · ${d.data.name || ''} ${d.parent ? '↑ subir' : ''}`];
+        const parts = [d.data.code];
+        if (d.data.valoracion != null) parts.push(Number(d.data.valoracion).toFixed(1));
+        return parts;
+      })
+      .join('tspan')
+      .attr('x', 4)
+      .attr('y', (d, i) => `${1.1 + i * 1.1}em`)
+      .attr('fill-opacity', (d, i, nodes) => i === nodes.length - 1 && nodes.length > 1 ? 0.8 : 1)
+      .text(d => d);
+
+    grp.call(position, root);
+  }
+
+  // ── Position elements using current x/y scales ───────────────────────────────
+  function position(grp, root) {
+    grp.selectAll('g')
+      .attr('transform', d =>
+        d === root ? `translate(0,0)` : `translate(${x(d.x0)},${y(d.y0)})`)
+      .select('rect')
+      .attr('width',  d => d === root ? W : Math.max(0, x(d.x1) - x(d.x0)))
+      .attr('height', d => d === root ? 28 : Math.max(0, y(d.y1) - y(d.y0)));
+  }
+
+  // ── Zoom in ───────────────────────────────────────────────────────────────────
+  function zoomIn(d) {
+    const group0 = group.attr('pointer-events','none');
+    const group1 = group = svg.append('g').call(render, d);
+
+    x.domain([d.x0, d.x1]);
+    y.domain([d.y0, d.y1]);
+
+    document.getElementById('btnHome').style.display = 'block';
+    document.getElementById('tm-hint').textContent =
+      d.data.type === 'function' ? 'Click categoría para ver subcategorías · Click header para subir' :
+      'Click subcategoría para ver KRIs · Click header para subir';
+
+    svg.transition().duration(750)
+      .call(t => group0.transition(t).remove()
+        .call(position, d.parent))
+      .call(t => group1.transition(t)
+        .attrTween('opacity', () => d3.interpolate(0, 1))
+        .call(position, d));
+  }
+
+  // ── Zoom out ──────────────────────────────────────────────────────────────────
+  function zoomOut(d) {
+    const group0 = group.attr('pointer-events','none');
+    const group1 = group = svg.insert('g',':first-child').call(render, d.parent);
+
+    x.domain([d.parent.x0, d.parent.x1]);
+    y.domain([d.parent.y0, d.parent.y1]);
+
+    if (!d.parent.parent) {
+      document.getElementById('btnHome').style.display = 'none';
+      document.getElementById('tm-hint').textContent = 'Click en un rectángulo para hacer drilldown';
+    }
+
+    svg.transition().duration(750)
+      .call(t => group0.transition(t).remove()
+        .attrTween('opacity', () => d3.interpolate(1, 0))
+        .call(position, d))
+      .call(t => group1.transition(t).call(position, d.parent));
+  }
+
+  // ── Initial render ────────────────────────────────────────────────────────────
+  x.domain([rootH.x0, rootH.x1]);
+  y.domain([rootH.y0, rootH.y1]);
+  group.call(render, rootH);
+
+  document.getElementById('btnHome').addEventListener('click', () => {
+    // Walk up to root
+    let cur = group.datum ? group.datum() : rootH;
+    while (cur && cur.parent) zoomOut(cur = cur.parent || rootH);
+    x.domain([rootH.x0, rootH.x1]);
+    y.domain([rootH.y0, rootH.y1]);
+    svg.selectAll('g').remove();
+    group = svg.append('g').call(render, rootH);
+    document.getElementById('btnHome').style.display = 'none';
+  });
+  document.getElementById('kp-close').addEventListener('click', () =>
+    document.getElementById('kri-panel').classList.remove('visible'));
+
+  // ── KRI Panel ─────────────────────────────────────────────────────────────────
+  async function openKriPanel(sub) {
+    const panel = document.getElementById('kri-panel');
+    document.getElementById('kp-title').textContent = `${sub.code} · ${sub.catCode} · ${sub.fnCode}`;
+    document.getElementById('kp-desc').textContent  = sub.description || '';
+    document.getElementById('kp-list').innerHTML    = '<div style="color:#94a3b8;font-size:.82rem">Cargando…</div>';
+    panel.classList.add('visible');
+    panel.scrollIntoView({ behavior:'smooth', block:'nearest' });
+
+    try {
+      const rows = await (await fetch(`/api/kris?subcategoryId=${sub.subId}`)).json();
+      const kris = rows.filter(r => r.kri_id);
+      if (!kris.length) {
+        document.getElementById('kp-list').innerHTML =
+          '<div style="color:#64748b;font-style:italic;font-size:.85rem">Sin KRIs asignados.</div>';
+        return;
+      }
+      document.getElementById('kp-list').innerHTML = kris.map(k => {
+        const v = k.valoracion != null ? Number(k.valoracion).toFixed(1) : null;
+        return `<div class="kri-card">
+          <div style="font-weight:600;margin-bottom:.3rem">${k.kri_name}</div>
+          ${k.kri_description ? `<div style="font-size:.78rem;color:#94a3b8;margin-bottom:.35rem">${k.kri_description}</div>` : ''}
+          <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
+            ${v != null ? `<span class="kri-badge" style="background:${cmmiColor(k.valoracion)}">${v}</span>` : ''}
+            <span style="font-size:.78rem;color:#94a3b8">${cmmiLabel(k.valoracion)}</span>
+            ${k.last_saved_by ? `<span style="font-size:.75rem;color:#64748b">· ${k.last_saved_by}</span>` : ''}
+          </div>
+        </div>`;
+      }).join('');
+    } catch {
+      document.getElementById('kp-list').innerHTML = '<div style="color:#ef4444">Error al cargar.</div>';
+    }
+  }
+})();
+</script>
+</body>
+</html>

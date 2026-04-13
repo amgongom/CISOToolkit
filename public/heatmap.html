@@ -42,6 +42,17 @@
       <p>Heatmap</p>
     </div>
 
+    <!-- Export bar -->
+    <div style="display:flex;justify-content:flex-end;align-items:center;gap:.4rem;margin-bottom:.75rem">
+      <select id="exportFormat" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;cursor:pointer">
+        <option value="json">JSON</option>
+        <option value="csv">CSV</option>
+        <option value="xml">XML</option>
+        <option value="xlsx">Excel (.xlsx)</option>
+      </select>
+      <button class="btn-reset" id="btnExport">⬇ Exportar</button>
+    </div>
+
     <!-- Stats -->
     <div class="heatmap-stats" id="statsRow">
       <div class="stat-card"><div class="stat-value" id="stat-total">—</div><div class="stat-label">Total subcategorías</div></div>
