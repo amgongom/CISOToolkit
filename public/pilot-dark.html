@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>CISOToolkit — Pilot Dark</title>
+  <title>CISOToolkit</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
@@ -158,7 +158,9 @@
 
     .topbar-nav {
       display: flex;
+      align-items: center;
       gap: 4px;
+      margin-left: 0;
     }
 
     .topbar-nav a {
@@ -240,6 +242,8 @@
       display: flex;
       align-items: center;
       gap: .55rem;
+      color: var(--text-secondary);
+      font-size: .85rem;
     }
 
     .avatar {
@@ -678,7 +682,7 @@
         <div class="legend-swatch" style="background:#fbbf24"></div>N3 Definido (41–60)
       </div>
       <div class="legend-item">
-        <div class="legend-swatch" style="background:#a3e635"></div>N4 Cuant. Gestionado (61–80)
+        <div class="legend-swatch" style="background:#a3e635"></div>N4 Gestionado (61–80)
       </div>
       <div class="legend-item">
         <div class="legend-swatch" style="background:#16a34a"></div>N5 Optimizado (81–100)
@@ -981,7 +985,7 @@ function updateBreadcrumb(subData) {
   } else {
     items = path.map((node, i) => ({
       label: node.data.code === 'ROOT'
-        ? 'NIST CSF 2.0'
+        ? ''
         : (node.data.name || node.data.code).toUpperCase(),
       navIdx: i,
       isCurrent: i === path.length - 1,
