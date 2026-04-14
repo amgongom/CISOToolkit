@@ -829,16 +829,17 @@ function importKRIsFromExcel() {
   const ws = wb.Sheets[wb.SheetNames[0]];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1 }).slice(1); // skip header
 
-  const getSubId = db.prepare('SELECT id FROM subcategories WHERE code = ?');
-  const upsert   = db.prepare(`
+  const getSubId  = db.prepare('SELECT id FROM subcategories WHERE code = ?');
+  const getExisting = db.prepare('SELECT id FROM kris WHERE subcategory_id = ? LIMIT 1');
+  const insertKri = db.prepare(`
     INSERT INTO kris (subcategory_id, kri_name, kri_description, kri_formula,
                       cmmi_flag, cmmi_levels, valoracion)
     VALUES (?,?,?,?,?,?,?)
-    ON CONFLICT(subcategory_id) DO UPDATE SET
-      kri_name=excluded.kri_name, kri_description=excluded.kri_description,
-      kri_formula=excluded.kri_formula, cmmi_flag=excluded.cmmi_flag,
-      cmmi_levels=excluded.cmmi_levels, valoracion=excluded.valoracion,
-      updated_at=datetime('now')
+  `);
+  const updateKri = db.prepare(`
+    UPDATE kris SET kri_name=?, kri_description=?, kri_formula=?,
+      cmmi_flag=?, cmmi_levels=?, valoracion=?, updated_at=datetime('now')
+    WHERE id=?
   `);
 
   let imported = 0, skipped = 0;
@@ -851,15 +852,18 @@ function importKRIsFromExcel() {
       const sub  = getSubId.get(code);
       if (!sub) { skipped++; return; }
 
-      upsert.run(
-        sub.id,
-        String(r[4]  || '').trim(),   // kri_name
-        String(r[5]  || '').trim(),   // kri_description
-        String(r[6]  || '').trim(),   // kri_formula
-        String(r[9]  || '').trim() || null,  // cmmi_flag
-        String(r[8]  || '').trim(),   // cmmi_levels
-        r[7]  != null ? parseFloat(r[7])  : null   // valoracion
-      );
+      const name   = String(r[4]  || '').trim();
+      const desc   = String(r[5]  || '').trim();
+      const formula= String(r[6]  || '').trim();
+      const flag   = String(r[9]  || '').trim() || null;
+      const levels = String(r[8]  || '').trim();
+      const val    = r[7] != null ? parseFloat(r[7]) : null;
+      const existing = getExisting.get(sub.id);
+      if (existing) {
+        updateKri.run(name, desc, formula, flag, levels, val, existing.id);
+      } else {
+        insertKri.run(sub.id, name, desc, formula, flag, levels, val);
+      }
       imported++;
     });
   });
