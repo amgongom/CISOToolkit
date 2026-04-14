@@ -30,7 +30,14 @@
       "WebSearch",
       "Bash(ipconfig)",
       "Bash(mv heatmap.html heatmap.html.bak)",
-      "Bash(mv treemap-animated.html heatmap.html)"
+      "Bash(mv treemap-animated.html heatmap.html)",
+      "Bash(nslookup:*)",
+      "Bash(sed -i 's|/pilot-dark\\\\.html|/heatmap.html|g' public/data.html public/pilot-dark.html public/heatmap.html)",
+      "Bash(cp public/pilot-dark.html public/heatmap.html)",
+      "Bash(rm public/pilot-dark.html)",
+      "Bash(ls public/*.html)"
     ]
-  }
+  },
+  "spinnerTipsEnabled": true,
+  "prefersReducedMotion": false
 }

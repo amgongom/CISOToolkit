@@ -43,6 +43,7 @@ public/
 - **CMMI**: escala 0–100, N1 (rojo) → N5 (verde), thresholds: 20/40/60/80
 - **Commits**: siempre con tag de versión (v2.3, v2.4, etc.)
 - **Versiones en GitHub**: `git tag vX.Y && git push origin master --tags`
+- **Repo**: `https://github.com/amgongom/CISOToolkit.git`
 - No usar frameworks CSS (Bootstrap, Tailwind, etc.)
 - No usar React/Vue — todo Vanilla JS
 
