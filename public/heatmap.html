@@ -11,46 +11,46 @@
     svg { display:block; }
 
     .node { cursor:pointer; }
-    .node rect { stroke:#0f172a; stroke-width:1px; }
+    .node rect { stroke:#0a0e14; stroke-width:1px; }
     .node:hover rect { opacity:.82; }
-    .node text { pointer-events:none; font-family:'Segoe UI',system-ui,sans-serif; fill:#000; }
+    .node text { pointer-events:none; font-family:'Inter',system-ui,sans-serif; fill:#000; }
 
     /* Breadcrumb */
     #breadcrumb {
       display:flex; align-items:center; gap:.4rem; flex-wrap:wrap;
-      background:#1e293b; border:1px solid #475569; border-radius:8px;
+      background:#111820; border:1px solid #1e2d3d; border-radius:8px;
       padding:.5rem .85rem; margin-bottom:.6rem; font-size:.85rem;
     }
     .bc-item {
-      color:#3b82f6; cursor:pointer; padding:.2rem .45rem;
+      color:#4d9fff; cursor:pointer; padding:.2rem .45rem;
       border-radius:4px; transition:background .15s;
     }
-    .bc-item:hover { background:#334155; }
-    .bc-item.current { color:#f1f5f9; cursor:default; font-weight:600; }
-    .bc-sep { color:#475569; }
+    .bc-item:hover { background:#1a2230; }
+    .bc-item.current { color:#e2eaf4; cursor:default; font-weight:600; }
+    .bc-sep { color:#2e4055; }
 
     /* Hint bar */
     #hint {
-      font-size:.78rem; color:#64748b; margin-bottom:.5rem;
+      font-size:.78rem; color:#3d5068; margin-bottom:.5rem;
     }
 
     /* Tooltip */
     #tooltip {
       position:fixed; display:none; pointer-events:none;
-      background:#0f172a; border:1px solid #334155; color:#f1f5f9;
+      background:#0a0e14; border:1px solid #1e2d3d; color:#e2eaf4;
       border-radius:6px; padding:.5rem .75rem; font-size:.82rem;
-      font-family:'Segoe UI',system-ui,sans-serif; max-width:260px;
+      font-family:'Inter',system-ui,sans-serif; max-width:260px;
       line-height:1.5; z-index:9999; box-shadow:0 4px 16px rgba(0,0,0,.5);
     }
 
     /* KRI Panel */
     #kri-panel {
-      display:none; background:#1e293b; border:1px solid #475569;
+      display:none; background:#111820; border:1px solid #1e2d3d;
       border-radius:8px; padding:1rem; margin-top:.75rem;
     }
     #kri-panel.open { display:block; }
     .kri-card {
-      background:#0f172a; border:1px solid #334155; border-radius:6px;
+      background:#0a0e14; border:1px solid #1e2d3d; border-radius:6px;
       padding:.75rem; margin-bottom:.5rem;
     }
     .kri-card:last-child { margin-bottom:0; }
@@ -59,17 +59,26 @@
 <body>
 <div class="app-container">
   <header class="topbar">
-    <a class="topbar-brand" href="/heatmap.html">
-      <div class="shield">🛡</div><span>CISOToolkit</span>
+    <a class="brand" href="/pilot-dark.html">
+      <div class="brand-mark">🛡</div>
+      <span>CISOToolkit</span>
     </a>
+    <div class="topbar-divider"></div>
     <nav class="topbar-nav">
-      <a href="/heatmap.html" class="active">Heatmap</a>
+      <a href="/pilot-dark.html" class="active">Heatmap</a>
       <a href="/data.html">Key Risk Indicators</a>
     </nav>
     <div class="topbar-spacer"></div>
-    <div class="topbar-user">
-      <span>👤 <span id="topbarUser"></span></span>
-      <button class="btn-logout" id="logoutBtn">Salir</button>
+    <div class="topbar-right">
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <div class="topbar-user">
+        <div class="avatar">👤</div>
+        <span id="topbarUser" style="font-size:.78rem"></span>
+        <button class="btn-logout" id="logoutBtn">Salir</button>
+      </div>
     </div>
   </header>
 
@@ -89,13 +98,13 @@
     <!-- KRI Panel -->
     <div id="kri-panel">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;
-                  margin-bottom:.75rem;padding-bottom:.6rem;border-bottom:1px solid #475569">
+                  margin-bottom:.75rem;padding-bottom:.6rem;border-bottom:1px solid #1e2d3d">
         <div>
           <div style="font-weight:700;font-size:.95rem" id="kp-title"></div>
-          <div style="font-size:.8rem;color:#94a3b8;margin-top:.15rem" id="kp-desc"></div>
+          <div style="font-size:.8rem;color:#7a90a8;margin-top:.15rem" id="kp-desc"></div>
         </div>
         <button id="kp-close"
-          style="background:none;border:none;color:#94a3b8;cursor:pointer;font-size:1.1rem">✕</button>
+          style="background:none;border:none;color:#7a90a8;cursor:pointer;font-size:1.1rem">✕</button>
       </div>
       <div id="kp-list"></div>
     </div>
@@ -109,7 +118,7 @@
 
 // ── Color helpers ─────────────────────────────────────────────────────────────
 function cmmiColor(v) {
-  if (v == null) return '#475569';
+  if (v == null) return '#2e4055';
   const stops = [[0,'#ef4444'],[20,'#f97316'],[40,'#fbbf24'],[60,'#a3e635'],[80,'#16a34a'],[100,'#16a34a']];
   for (let i = 0; i < stops.length - 1; i++) {
     if (v >= stops[i][0] && v <= stops[i+1][0])
@@ -195,9 +204,9 @@ function render() {
     .attr('width', W).attr('height', H)
     .style('display','block')
     .style('max-width','100%')
-    .style('background','#1e293b')
+    .style('background','#111820')
     .style('border-radius','8px')
-    .style('border','1px solid #475569');
+    .style('border','1px solid #1e2d3d');
 
   // ── Parent group backgrounds ──────────────────────────────────────────────
   const parents = subtreeH.descendants().filter(d => d.depth === 1 && d.children);
@@ -207,7 +216,7 @@ function render() {
     .attr('x', d=>d.x0).attr('y', d=>d.y0)
     .attr('width', d=>d.x1-d.x0).attr('height', d=>d.y1-d.y0)
     .attr('fill', 'none')
-    .attr('stroke', '#475569').attr('stroke-width', 1)
+    .attr('stroke', '#2e4055').attr('stroke-width', 1)
     .attr('rx', 5);
 
   // Parent header labels
@@ -336,16 +345,16 @@ function render() {
       const v = d.data.valoracion;
       const isSubcat = d.data.type === 'subcategory';
       tip.innerHTML = `
-        <div style="font-size:.72rem;color:#64748b;margin-bottom:.25rem">
+        <div style="font-size:.72rem;color:#3d5068;margin-bottom:.25rem">
           ${d.data.fnName || ''}
-          ${d.data.catName ? ` <span style="color:#475569">›</span> ${d.data.catName}` : ''}
+          ${d.data.catName ? ` <span style="color:#2e4055">›</span> ${d.data.catName}` : ''}
         </div>
         <b style="font-size:.92rem">${d.data.code}</b>
-        ${d.data.description ? `<br><span style="color:#94a3b8;font-size:.78rem">${d.data.description.substring(0,100)}</span>` : ''}
-        <br><span style="color:#64748b;font-size:.75rem;margin-top:.2rem;display:inline-block">Val: </span>
+        ${d.data.description ? `<br><span style="color:#7a90a8;font-size:.78rem">${d.data.description.substring(0,100)}</span>` : ''}
+        <br><span style="color:#3d5068;font-size:.75rem;margin-top:.2rem;display:inline-block">Val: </span>
         <b style="color:${cmmiColor(v)}">${v!=null?Number(v).toFixed(1):'—'}</b>
-        <span style="color:#94a3b8;font-size:.78rem"> · ${cmmiLabel(v)}</span>
-        <br><span style="color:#475569;font-size:.72rem">${isSubcat?'Click para ver KRIs':'Click para hacer drilldown'}</span>`;
+        <span style="color:#7a90a8;font-size:.78rem"> · ${cmmiLabel(v)}</span>
+        <br><span style="color:#2e4055;font-size:.72rem">${isSubcat?'Click para ver KRIs':'Click para hacer drilldown'}</span>`;
       tip.style.display='block';
     })
     .on('mousemove', e => {
@@ -422,7 +431,7 @@ async function openKriPanel(sub) {
   document.getElementById('kp-title').textContent = `${sub.fnName}  ·  ${sub.catName}`;
   document.getElementById('kp-desc').textContent  = `${sub.code} — ${sub.description || ''}`;
   document.getElementById('kp-list').innerHTML    =
-    '<div style="color:#94a3b8;font-size:.82rem">Cargando KRIs…</div>';
+    '<div style="color:#7a90a8;font-size:.82rem">Cargando KRIs…</div>';
   panel.classList.add('open');
   panel.scrollIntoView({ behavior:'smooth', block:'start' });
 
@@ -432,7 +441,7 @@ async function openKriPanel(sub) {
 
     if (!kris.length) {
       document.getElementById('kp-list').innerHTML =
-        '<div style="color:#64748b;font-style:italic;font-size:.85rem">Sin KRIs asignados.</div>';
+        '<div style="color:#3d5068;font-style:italic;font-size:.85rem">Sin KRIs asignados.</div>';
       return;
     }
 
@@ -443,16 +452,16 @@ async function openKriPanel(sub) {
         <div class="kri-card">
           <div style="font-weight:600;margin-bottom:.25rem">${k.kri_name}</div>
           ${k.kri_description
-            ? `<div style="font-size:.78rem;color:#94a3b8;margin-bottom:.3rem">${k.kri_description}</div>` : ''}
+            ? `<div style="font-size:.78rem;color:#7a90a8;margin-bottom:.3rem">${k.kri_description}</div>` : ''}
           ${k.kri_formula
-            ? `<div style="font-size:.75rem;color:#64748b;font-style:italic;margin-bottom:.35rem">Fórmula: ${k.kri_formula}</div>` : ''}
+            ? `<div style="font-size:.75rem;color:#3d5068;font-style:italic;margin-bottom:.35rem">Fórmula: ${k.kri_formula}</div>` : ''}
           <div style="display:flex;align-items:center;gap:.5rem;flex-wrap:wrap">
             ${v != null
               ? `<span style="font-weight:700;font-size:.95rem;padding:.1rem .45rem;
                              border-radius:4px;background:${col};color:#fff">${v}</span>` : ''}
-            <span style="font-size:.78rem;color:#94a3b8">${cmmiLabel(k.valoracion)}</span>
+            <span style="font-size:.78rem;color:#7a90a8">${cmmiLabel(k.valoracion)}</span>
             ${k.last_saved_by
-              ? `<span style="font-size:.75rem;color:#64748b">· ${k.last_saved_by}</span>` : ''}
+              ? `<span style="font-size:.75rem;color:#3d5068">· ${k.last_saved_by}</span>` : ''}
           </div>
         </div>`;
     }).join('');

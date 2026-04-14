@@ -11,18 +11,26 @@
 
   <!-- Topbar -->
   <header class="topbar">
-    <a class="topbar-brand" href="/heatmap.html">
-      <div class="shield">🛡</div>
+    <a class="brand" href="/pilot-dark.html">
+      <div class="brand-mark">🛡</div>
       <span>CISOToolkit</span>
     </a>
+    <div class="topbar-divider"></div>
     <nav class="topbar-nav">
-      <a href="/heatmap.html" data-page="heatmap">Heatmap</a>
-      <a href="/data.html"             data-page="data">Key Risk Indicators</a>
+      <a href="/pilot-dark.html">Heatmap</a>
+      <a href="/data.html" class="active">Key Risk Indicators</a>
     </nav>
     <div class="topbar-spacer"></div>
-    <div class="topbar-user">
-      <span>👤 <span id="topbarUser"></span></span>
-      <button class="btn-logout" id="logoutBtn">Salir</button>
+    <div class="topbar-right">
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <div class="topbar-user">
+        <div class="avatar">👤</div>
+        <span id="topbarUser" style="font-size:.78rem"></span>
+        <button class="btn-logout" id="logoutBtn">Salir</button>
+      </div>
     </div>
   </header>
 
@@ -63,7 +71,7 @@
         <button class="btn-reset" id="btnReset">↺ Limpiar</button>
         <button class="btn-reset" id="btnToggleExamples">⊟ Ocultar ejemplos</button>
         <div style="display:flex;align-items:center;gap:.4rem;margin-left:auto">
-          <select id="exportFormat" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;cursor:pointer">
+          <select id="exportFormat" style="background:var(--bg-base);border:1px solid var(--border-soft);color:var(--text-primary);border-radius:6px;padding:.45rem .7rem;font-size:.85rem;cursor:pointer">
             <option value="json">JSON</option>
             <option value="csv">CSV</option>
             <option value="xml">XML</option>
@@ -72,7 +80,7 @@
           <button class="btn-reset" id="btnExport">⬇ Exportar</button>
         </div>
       </div>
-      <div style="font-size:.8rem;color:var(--text-muted)" id="resultCount"></div>
+      <div style="font-size:.8rem;color:var(--text-secondary)" id="resultCount"></div>
     </div>
 
     <!-- Table -->
@@ -149,7 +157,7 @@
           <div id="fieldDescripcion" class="field-readonly" style="font-size:.82rem;line-height:1.4"></div>
         </div>
       </div>
-      <hr style="border:none;border-top:1px solid var(--border);margin:.25rem 0 .75rem">
+      <hr style="border:none;border-top:1px solid var(--border-soft);margin:.25rem 0 .75rem">
       <div class="info-box" id="modalExamplesBox" style="display:none">
         <div class="info-label">Ejemplos de implementación</div>
         <div class="info-value" id="modalExamples"></div>
@@ -178,7 +186,7 @@
           </div>
           <div class="form-group">
             <label>CMMI Flag</label>
-            <select id="kri_cmmi_flag" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:.6rem .85rem;font-size:.9rem;width:100%">
+            <select id="kri_cmmi_flag" style="background:var(--bg-base);border:1px solid var(--border-soft);color:var(--text-primary);border-radius:6px;padding:.6rem .85rem;font-size:.9rem;width:100%">
               <option value="">— seleccionar —</option>
               <option value="POSITIVO">POSITIVO (↑ = mejor)</option>
               <option value="NEGATIVO">NEGATIVO (↑ = peor)</option>
@@ -188,7 +196,7 @@
       </form>
       <!-- History -->
       <div id="kriHistoryBox" style="display:none;margin-top:1.25rem">
-        <div style="font-size:.78rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Historial de valoraciones</div>
+        <div style="font-size:.78rem;font-weight:600;color:var(--text-secondary);text-transform:uppercase;letter-spacing:.06em;margin-bottom:.5rem">Historial de valoraciones</div>
         <div id="kriHistoryList" style="max-height:180px;overflow-y:auto;font-size:.82rem"></div>
       </div>
     </div>
