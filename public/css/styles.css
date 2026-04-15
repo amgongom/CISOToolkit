@@ -1018,6 +1018,22 @@ tbody td {
   z-index: 0;
 }
 
+/* ── Page header inside HUD strip (compact variant) ─────────────────────── */
+.hm-page-header {
+  margin-bottom: 0;
+  padding-left: .85rem;
+  flex-shrink: 0;
+  margin-right: 0;
+}
+.hm-page-header .page-header-framework {
+  font-size: .58rem;
+  letter-spacing: .09em;
+}
+.hm-page-header .page-header-title {
+  font-size: .88rem;
+  letter-spacing: 0;
+}
+
 /* ── Animations ─────────────────────────────────────────────────────────── */
 @keyframes hm-pulse-n1 {
   0%, 100% { opacity: 1; }
