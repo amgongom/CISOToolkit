@@ -196,14 +196,8 @@ function render(animateIn = false) {
   // ── Leaf nodes ──
   renderLeaves(svg, leaves, animateIn);
 
-  // Hint text
-  const hints = {
-    root:     'Click en una Función para hacer drilldown',
-    function: 'Click en una Categoría para ver Subcategorías',
-    category: 'Click en una Subcategoría para ver sus KRIs',
-  };
   const hint = document.getElementById('hint');
-  if (hint) hint.textContent = hints[STATE.focus.data.type] || '';
+  if (hint) hint.textContent = '';
 }
 
 // ── SVG Glow Filters ──────────────────────────────────────────────────────────
@@ -507,9 +501,10 @@ function updateBreadcrumb(subData) {
       { label: (subData.description || subData.code).substring(0, 48).toUpperCase(), isCurrent: true },
     ];
   } else {
-    const path = STATE.focus.ancestors().reverse();
+    const path = STATE.focus.ancestors().reverse()
+      .filter(n => n.data.code !== 'ROOT');  // ocultar nodo raíz
     items = path.map((node, i) => ({
-      label: node.data.code === 'ROOT' ? 'NIST CSF 2.0' : (node.data.code + (node.data.name ? '  ' + node.data.name.toUpperCase() : '')).substring(0, 38),
+      label: (node.data.code + (node.data.name ? '  ' + node.data.name.toUpperCase() : '')).substring(0, 38),
       node,
       isCurrent: i === path.length - 1,
     }));

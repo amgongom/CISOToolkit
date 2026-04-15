@@ -1022,8 +1022,8 @@ tbody td {
 .hm-page-header {
   margin-bottom: 0;
   padding-left: .85rem;
+  padding-right: 1.1rem;
   flex-shrink: 0;
-  margin-right: 0;
 }
 .hm-page-header .page-header-framework {
   font-size: .58rem;
