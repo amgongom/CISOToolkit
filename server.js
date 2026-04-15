@@ -3,6 +3,8 @@
 const express = require('express');
 const session = require('express-session');
 const bcrypt = require('bcryptjs');
+const passport = require('passport');
+const LocalStrategy = require('passport-local').Strategy;
 const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 const path = require('path');
@@ -812,6 +814,15 @@ function seedDatabase() {
 
 seedDatabase();
 
+// Demo sandbox user (idempotente — se crea solo si no existe)
+(function seedDemoUser() {
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get('demo');
+  if (!existing) {
+    const demoHash = bcrypt.hashSync('demo-sandbox-2024', 10);
+    db.prepare('INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)').run('demo', demoHash, 'DEMO');
+  }
+})();
+
 // ─── Import KRIs from Excel ───────────────────────────────────────────────────
 
 function importKRIsFromExcel() {
@@ -873,6 +884,26 @@ function importKRIsFromExcel() {
 
 importKRIsFromExcel();
 
+// ─── Passport Configuration ───────────────────────────────────────────────────
+
+passport.use(new LocalStrategy(
+  { usernameField: 'username', passwordField: 'password' },
+  function(username, password, done) {
+    const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
+    if (!user) return done(null, false, { message: 'Usuario o contraseña incorrectos' });
+    if (!bcrypt.compareSync(password, user.password_hash))
+      return done(null, false, { message: 'Usuario o contraseña incorrectos' });
+    return done(null, user);
+  }
+));
+
+passport.serializeUser((user, done) => done(null, user.id));
+
+passport.deserializeUser((id, done) => {
+  const user = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(id);
+  done(null, user || false);
+});
+
 // ─── Middleware ───────────────────────────────────────────────────────────────
 
 app.use(express.json());
@@ -883,37 +914,86 @@ app.use(session({
   saveUninitialized: false,
   cookie: { secure: false, httpOnly: true, maxAge: 8 * 60 * 60 * 1000 }
 }));
+app.use(passport.initialize());
+app.use(passport.session());
 app.use(express.static(path.join(__dirname, 'public')));
 
 function requireAuth(req, res, next) {
-  if (req.session && req.session.userId) return next();
+  if (req.isAuthenticated()) return next();
   res.status(401).json({ error: 'No autenticado' });
 }
 
 // ─── Auth Routes ──────────────────────────────────────────────────────────────
 
-app.post('/api/auth/login', (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) return res.status(400).json({ error: 'Credenciales requeridas' });
+app.post('/api/auth/login', (req, res, next) => {
+  if (!req.body.username || !req.body.password)
+    return res.status(400).json({ error: 'Credenciales requeridas' });
 
-  const user = db.prepare('SELECT * FROM users WHERE username = ?').get(username);
-  if (!user || !bcrypt.compareSync(password, user.password_hash)) {
-    return res.status(401).json({ error: 'Usuario o contraseña incorrectos' });
-  }
-  req.session.userId = user.id;
-  req.session.username = user.username;
-  req.session.role = user.role;
-  res.json({ ok: true, username: user.username, role: user.role });
+  passport.authenticate('local', (err, user, info) => {
+    if (err)   return next(err);
+    if (!user) return res.status(401).json({ error: info?.message || 'Usuario o contraseña incorrectos' });
+
+    req.logIn(user, (err) => {
+      if (err) return next(err);
+      // Mantener campos de sesión explícitos — kri_history usa req.session.username
+      req.session.userId   = user.id;
+      req.session.username = user.username;
+      req.session.role     = user.role;
+      res.json({ ok: true, username: user.username, role: user.role });
+    });
+  })(req, res, next);
 });
 
-app.post('/api/auth/logout', (req, res) => {
-  req.session.destroy();
-  res.json({ ok: true });
+app.post('/api/auth/logout', (req, res, next) => {
+  req.logout((err) => {
+    if (err) return next(err);
+    req.session.destroy(() => res.json({ ok: true }));
+  });
 });
 
 app.get('/api/auth/me', (req, res) => {
-  if (!req.session.userId) return res.status(401).json({ error: 'No autenticado' });
-  res.json({ userId: req.session.userId, username: req.session.username, role: req.session.role });
+  if (!req.isAuthenticated()) return res.status(401).json({ error: 'No autenticado' });
+  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role });
+});
+
+app.post('/api/auth/register', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password)
+    return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
+  if (username.length < 3)
+    return res.status(400).json({ error: 'El usuario debe tener al menos 3 caracteres' });
+  if (password.length < 8)
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+  if (['demo', 'ciso'].includes(username.toLowerCase()))
+    return res.status(400).json({ error: 'Ese nombre de usuario no está disponible' });
+
+  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
+  if (existing) return res.status(409).json({ error: 'El usuario ya existe' });
+
+  const hash = bcrypt.hashSync(password, 10);
+  const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
+  const newUser = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(result.lastInsertRowid);
+
+  req.logIn(newUser, (err) => {
+    if (err) return res.status(500).json({ error: 'Error al iniciar sesión' });
+    req.session.userId   = newUser.id;
+    req.session.username = newUser.username;
+    req.session.role     = newUser.role;
+    res.json({ ok: true, username: newUser.username, role: newUser.role });
+  });
+});
+
+app.post('/api/auth/demo', (req, res, next) => {
+  const demoUser = db.prepare('SELECT id, username, role FROM users WHERE username = ?').get('demo');
+  if (!demoUser) return res.status(500).json({ error: 'Usuario demo no disponible' });
+
+  req.logIn(demoUser, (err) => {
+    if (err) return next(err);
+    req.session.userId   = demoUser.id;
+    req.session.username = demoUser.username;
+    req.session.role     = demoUser.role;
+    res.json({ ok: true, username: demoUser.username, role: demoUser.role });
+  });
 });
 
 // ─── Data Routes ──────────────────────────────────────────────────────────────

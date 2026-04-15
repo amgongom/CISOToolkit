@@ -20,57 +20,174 @@
       </div>
     </div>
 
-    <h1 class="login-title">Login</h1>
-    <p class="login-subtitle">Heatmap of Key Risk Indicators</p>
+    <!-- Tabs -->
+    <div class="auth-tabs">
+      <button class="auth-tab active" id="tabLogin" type="button">Iniciar sesión</button>
+      <button class="auth-tab" id="tabRegister" type="button">Crear cuenta</button>
+    </div>
 
-    <div class="login-error" id="loginError"></div>
+    <div class="login-error" id="authError"></div>
 
+    <!-- Login form -->
     <form id="loginForm" autocomplete="on">
       <div class="form-group">
-        <label>User</label>
-        <input type="text" id="username" name="username" placeholder="ciso" autocomplete="username" required>
+        <label>Usuario</label>
+        <input type="text" id="loginUsername" name="username" placeholder="ciso" autocomplete="username" required>
       </div>
       <div class="form-group">
-        <label>Password</label>
-        <input type="password" id="password" name="password" placeholder="••••••••" autocomplete="current-password" required>
+        <label>Contraseña</label>
+        <input type="password" id="loginPassword" name="password" placeholder="••••••••" autocomplete="current-password" required>
       </div>
       <button type="submit" class="btn btn-primary btn-login" id="loginBtn">Entrar</button>
     </form>
+
+    <!-- Register form (hidden by default) -->
+    <form id="registerForm" autocomplete="on" style="display:none">
+      <div class="form-group">
+        <label>Usuario</label>
+        <input type="text" id="regUsername" name="username" placeholder="mi_usuario" autocomplete="username" required minlength="3">
+      </div>
+      <div class="form-group">
+        <label>Contraseña</label>
+        <input type="password" id="regPassword" name="password" placeholder="••••••••" autocomplete="new-password" required minlength="8">
+      </div>
+      <div class="form-group">
+        <label>Confirmar contraseña</label>
+        <input type="password" id="regPasswordConfirm" name="password_confirm" placeholder="••••••••" autocomplete="new-password" required minlength="8">
+      </div>
+      <button type="submit" class="btn btn-primary btn-login" id="registerBtn">Crear cuenta</button>
+    </form>
+
+    <!-- Sandbox demo -->
+    <div class="auth-divider">o</div>
+    <button class="btn-demo" id="demoBtn" type="button">Probar sin registrarse</button>
   </div>
 </div>
 
 <script>
-document.getElementById('loginForm').addEventListener('submit', async (e) => {
+const tabLogin    = document.getElementById('tabLogin');
+const tabRegister = document.getElementById('tabRegister');
+const loginForm   = document.getElementById('loginForm');
+const registerForm= document.getElementById('registerForm');
+const authError   = document.getElementById('authError');
+
+function showError(msg) {
+  authError.textContent = msg;
+  authError.style.display = 'block';
+}
+function clearError() {
+  authError.style.display = 'none';
+}
+
+// Tab switching
+tabLogin.addEventListener('click', () => {
+  tabLogin.classList.add('active');
+  tabRegister.classList.remove('active');
+  loginForm.style.display = '';
+  registerForm.style.display = 'none';
+  clearError();
+});
+tabRegister.addEventListener('click', () => {
+  tabRegister.classList.add('active');
+  tabLogin.classList.remove('active');
+  registerForm.style.display = '';
+  loginForm.style.display = 'none';
+  clearError();
+});
+
+// Login
+loginForm.addEventListener('submit', async (e) => {
   e.preventDefault();
+  clearError();
   const btn = document.getElementById('loginBtn');
-  const errEl = document.getElementById('loginError');
-  errEl.style.display = 'none';
   btn.disabled = true;
   btn.textContent = 'Verificando...';
-
-  const username = document.getElementById('username').value.trim();
-  const password = document.getElementById('password').value;
 
   try {
     const res = await fetch('/api/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ username, password })
+      body: JSON.stringify({
+        username: document.getElementById('loginUsername').value.trim(),
+        password: document.getElementById('loginPassword').value
+      })
     });
     const data = await res.json();
     if (res.ok) {
       window.location.href = '/heatmap.html';
     } else {
-      errEl.textContent = data.error || 'Error de autenticación';
-      errEl.style.display = 'block';
+      showError(data.error || 'Error de autenticación');
       btn.disabled = false;
       btn.textContent = 'Entrar';
     }
   } catch {
-    errEl.textContent = 'Error de conexión con el servidor';
-    errEl.style.display = 'block';
+    showError('Error de conexión con el servidor');
     btn.disabled = false;
     btn.textContent = 'Entrar';
+  }
+});
+
+// Register
+registerForm.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  clearError();
+  const password        = document.getElementById('regPassword').value;
+  const passwordConfirm = document.getElementById('regPasswordConfirm').value;
+
+  if (password !== passwordConfirm) {
+    showError('Las contraseñas no coinciden');
+    return;
+  }
+
+  const btn = document.getElementById('registerBtn');
+  btn.disabled = true;
+  btn.textContent = 'Creando cuenta...';
+
+  try {
+    const res = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        username: document.getElementById('regUsername').value.trim(),
+        password
+      })
+    });
+    const data = await res.json();
+    if (res.ok) {
+      window.location.href = '/heatmap.html';
+    } else {
+      showError(data.error || 'Error al crear la cuenta');
+      btn.disabled = false;
+      btn.textContent = 'Crear cuenta';
+    }
+  } catch {
+    showError('Error de conexión con el servidor');
+    btn.disabled = false;
+    btn.textContent = 'Crear cuenta';
+  }
+});
+
+// Demo
+document.getElementById('demoBtn').addEventListener('click', async () => {
+  clearError();
+  const btn = document.getElementById('demoBtn');
+  btn.disabled = true;
+  btn.textContent = 'Entrando al sandbox...';
+
+  try {
+    const res = await fetch('/api/auth/demo', { method: 'POST' });
+    const data = await res.json();
+    if (res.ok) {
+      window.location.href = '/heatmap.html';
+    } else {
+      showError(data.error || 'Error al acceder al sandbox');
+      btn.disabled = false;
+      btn.textContent = 'Probar sin registrarse';
+    }
+  } catch {
+    showError('Error de conexión con el servidor');
+    btn.disabled = false;
+    btn.textContent = 'Probar sin registrarse';
   }
 });
 </script>
