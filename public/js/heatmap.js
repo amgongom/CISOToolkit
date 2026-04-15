@@ -1,69 +1,841 @@
-/* KRI Heatmap — ECharts Treemap */
+/* heatmap.js — CISOToolkit Stunning Heatmap v4.0
+   D3 treemap · SVG glow filters · drilldown · KRI panel · edit modal
+   ─────────────────────────────────────────────────────────────────── */
 'use strict';
 
-let allData      = [];
-let subById      = {};
-let catById      = {};   // catCode → category object (with id, name, fnName, fnCode)
-let echartsInst  = null;
-let editingSubId = null;
-let editingKriId = null;
+// ── Constants ─────────────────────────────────────────────────────────────────
+const TRANSITION_MS  = 220;
+const STAGGER_MS     = 14;
+const STAGGER_MAX_MS = 320;
+const PANEL_WIDTH    = 348;
+
+const COLOR_STOPS = [
+  { v:   0, r: 239, g:  68, b:  68 },  // #ef4444 N1
+  { v:  20, r: 249, g: 115, b:  22 },  // #f97316
+  { v:  40, r: 251, g: 191, b:  36 },  // #fbbf24 N3
+  { v:  60, r: 163, g: 230, b:  53 },  // #a3e635 N4
+  { v:  80, r:  22, g: 163, b:  74 },  // #16a34a N5
+  { v: 100, r:  22, g: 163, b:  74 },
+];
+
+// Glow filter definitions (N1 gets double-layer for danger emphasis)
+const GLOW_DEFS = [
+  { id:'glow-n1', color:'#ef4444', std:5,  opacity:0.7,  extra: { color:'#ff6666', std:2, opacity:0.45 } },
+  { id:'glow-n2', color:'#f97316', std:3.5,opacity:0.6  },
+  { id:'glow-n3', color:'#fbbf24', std:3,  opacity:0.55 },
+  { id:'glow-n4', color:'#a3e635', std:3,  opacity:0.55 },
+  { id:'glow-n5', color:'#16a34a', std:3.5,opacity:0.6  },
+];
+
+// ── State ─────────────────────────────────────────────────────────────────────
+const STATE = {
+  root:        null,   // full d3.hierarchy root (never replaced)
+  focus:       null,   // currently displayed node
+  subById:     {},     // id → subcategory lookup (enriched with fn/cat info)
+  rawData:     [],     // original API array
+  resizeTimer: null,
+  editSubId:   null,
+  editKriId:   null,
+};
 
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
   await initTopbar('heatmap');
   await loadData();
-  bindModal();
-  document.getElementById('btnExport').addEventListener('click', exportHeatmap);
+  bindUI();
 })();
 
-// ── Load data & render ────────────────────────────────────────────────────────
+// ── Data ──────────────────────────────────────────────────────────────────────
 async function loadData() {
-  const res = await fetch('/api/heatmap');
-  allData = await res.json();
+  try {
+    const res    = await fetch('/api/heatmap');
+    const api    = await res.json();
+    STATE.rawData = api;
 
-  allData.forEach(fn => fn.categories.forEach(cat => {
-    catById[cat.code] = { ...cat, fnName: fn.name, fnCode: fn.code };
-    cat.subcategories.forEach(s => {
-      subById[s.id] = { ...s, fnName: fn.name, fnCode: fn.code, catName: cat.name, catCode: cat.code };
-    });
-  }));
+    // Build lookups
+    STATE.subById = {};
+    api.forEach(fn => fn.categories.forEach(cat => {
+      cat.subcategories.forEach(s => {
+        STATE.subById[s.id] = {
+          ...s,
+          fnCode: fn.code, fnName: fn.name,
+          catCode: cat.code, catName: cat.name,
+        };
+      });
+    }));
 
-  updateStats();
-  renderTreemap();
-}
+    // Build D3 hierarchy
+    STATE.root  = buildHierarchy(api);
+    STATE.focus = STATE.root;
 
-// ── Stats ─────────────────────────────────────────────────────────────────────
-function updateStats() {
-  let total = 0, withKri = 0, n1 = 0;
-  const vals = [];
-  allData.forEach(fn => fn.categories.forEach(cat => cat.subcategories.forEach(s => {
-    total++;
-    if (s.valoracion != null) { withKri++; vals.push(s.valoracion); if (s.valoracion <= 20) n1++; }
-  })));
-  document.getElementById('stat-total').textContent   = total;
-  document.getElementById('stat-withkri').textContent = `${withKri}/${total}`;
-  document.getElementById('stat-n1').textContent      = n1;
-  const avgEl = document.getElementById('stat-avg');
-  if (vals.length) {
-    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    avgEl.textContent = avg.toFixed(1);
-    avgEl.style.color = `var(--color-${kriClass(avg)})`;
+    updateHUD();
+    render(true);
+    updateBreadcrumb();
+  } catch (e) {
+    console.error('loadData failed:', e);
+    toast('Error al cargar datos del heatmap', 'error');
   }
 }
 
-// ── Color helper ──────────────────────────────────────────────────────────────
-// Interpolación suave entre 5 anclajes de color (rojo→naranja→amarillo→lima→verde)
-const COLOR_STOPS = [
-  { v:   0, r: 239, g:  68, b:  68 },  // #ef4444  N1 rojo
-  { v:  20, r: 249, g: 115, b:  22 },  // #f97316  N1→N2
-  { v:  40, r: 251, g: 191, b:  36 },  // #fbbf24  N2→N3 amarillo
-  { v:  60, r: 163, g: 230, b:  53 },  // #a3e635  N3→N4 lima
-  { v:  80, r:  22, g: 163, b:  74 },  // #16a34a  N4→N5 verde oscuro
-  { v: 100, r:  22, g: 163, b:  74 },  // #16a34a  N5 verde oscuro
-];
+function buildHierarchy(api) {
+  return d3.hierarchy({
+    name: 'NIST CSF 2.0', code: 'ROOT', type: 'root',
+    children: api.map(fn => ({
+      name: fn.name, code: fn.code, type: 'function',
+      valoracion: fn.avgValoracion,
+      children: fn.categories.map(cat => ({
+        name: cat.name, code: cat.code, type: 'category',
+        valoracion: cat.avgValoracion,
+        fnCode: fn.code, fnName: fn.name,
+        children: cat.subcategories.map(s => ({
+          name: s.code, code: s.code, type: 'subcategory',
+          description: s.description, valoracion: s.valoracion,
+          kri_name: s.kri_name, subId: s.id,
+          fnCode: fn.code, fnName: fn.name,
+          catCode: cat.code, catName: cat.name,
+          value: 1,
+        }))
+      }))
+    }))
+  }).sum(d => d.value || 0).sort((a, b) => b.value - a.value);
+}
 
+// ── HUD ───────────────────────────────────────────────────────────────────────
+function updateHUD() {
+  let total = 0, withKri = 0, n1 = 0;
+  const vals = [];
+
+  STATE.rawData.forEach(fn => fn.categories.forEach(cat => {
+    cat.subcategories.forEach(s => {
+      total++;
+      if (s.valoracion != null) {
+        withKri++;
+        vals.push(s.valoracion);
+        if (s.valoracion <= 20) n1++;
+      }
+    });
+  }));
+
+  animateCounter('stat-total',   total);
+  animateCounter('stat-withkri', withKri);
+  animateCounter('stat-n1',      n1);
+
+  if (vals.length) {
+    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
+    animateCounter('stat-avg', avg, 1000, 1);
+  }
+}
+
+function animateCounter(elId, target, duration = 900, decimals = 0) {
+  const el = document.getElementById(elId);
+  if (!el) return;
+  const from  = parseFloat(el.textContent) || 0;
+  const start = performance.now();
+  function step(now) {
+    const t = Math.min((now - start) / duration, 1);
+    const eased = 1 - Math.pow(1 - t, 3);
+    const val   = from + (target - from) * eased;
+    el.textContent = decimals ? val.toFixed(decimals) : Math.round(val);
+    if (t < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
+}
+
+// ── Render ────────────────────────────────────────────────────────────────────
+function render(animateIn = false) {
+  const el = document.getElementById('chart');
+  if (!el || !STATE.root) return;
+
+  const W = el.clientWidth;
+  const H = el.clientHeight || (window.innerHeight - 160);
+
+  // Build subtree from focus node
+  const subtreeH = d3.hierarchy(STATE.focus.data)
+    .sum(d => d.value || 0)
+    .sort((a, b) => b.value - a.value);
+
+  const isRoot = STATE.focus === STATE.root;
+
+  d3.treemap()
+    .size([W, H])
+    .paddingOuter(isRoot ? 7 : 4)
+    .paddingTop(d => {
+      if (d.depth === 1) return isRoot ? 30 : 26;
+      return 2;
+    })
+    .paddingInner(2)
+    .tile(d3.treemapResquarify)
+    (subtreeH);
+
+  // Remove old SVG
+  d3.select('#chart').selectAll('svg').remove();
+
+  const svg = d3.select('#chart').append('svg')
+    .attr('width', W)
+    .attr('height', H)
+    .style('display', 'block')
+    .style('background', 'transparent');
+
+  // ── Glow filters ──
+  const defs = svg.append('defs');
+  appendGlowFilters(defs);
+
+  // Clip paths for leaves
+  const leaves = subtreeH.leaves();
+  leaves.forEach((d, i) => {
+    defs.append('clipPath').attr('id', `hm-nc-${i}`)
+      .append('rect')
+        .attr('width',  Math.max(0, d.x1 - d.x0))
+        .attr('height', Math.max(0, d.y1 - d.y0));
+  });
+
+  // ── Parent group backgrounds ──
+  const parents = subtreeH.descendants().filter(d => d.depth === 1 && d.children);
+  renderParentBands(svg, parents, isRoot);
+
+  // ── Leaf nodes ──
+  renderLeaves(svg, leaves, animateIn);
+
+  // Hint text
+  const hints = {
+    root:     'Click en una Función para hacer drilldown',
+    function: 'Click en una Categoría para ver Subcategorías',
+    category: 'Click en una Subcategoría para ver sus KRIs',
+  };
+  const hint = document.getElementById('hint');
+  if (hint) hint.textContent = hints[STATE.focus.data.type] || '';
+}
+
+// ── SVG Glow Filters ──────────────────────────────────────────────────────────
+function appendGlowFilters(defs) {
+  GLOW_DEFS.forEach(g => {
+    const f = defs.append('filter')
+      .attr('id', g.id)
+      .attr('x', '-30%').attr('y', '-30%')
+      .attr('width', '160%').attr('height', '160%');
+
+    f.append('feGaussianBlur').attr('in','SourceAlpha').attr('stdDeviation', g.std).attr('result','blur1');
+    f.append('feFlood').attr('flood-color', g.color).attr('flood-opacity', g.opacity).attr('result','color1');
+    f.append('feComposite').attr('in','color1').attr('in2','blur1').attr('operator','in').attr('result','glow1');
+
+    const merge = f.append('feMerge');
+
+    if (g.extra) {
+      // N1 double-layer
+      f.append('feGaussianBlur').attr('in','SourceAlpha').attr('stdDeviation', g.extra.std).attr('result','blur2');
+      f.append('feFlood').attr('flood-color', g.extra.color).attr('flood-opacity', g.extra.opacity).attr('result','color2');
+      f.append('feComposite').attr('in','color2').attr('in2','blur2').attr('operator','in').attr('result','glow2');
+      merge.append('feMergeNode').attr('in','glow1');
+      merge.append('feMergeNode').attr('in','glow2');
+    } else {
+      merge.append('feMergeNode').attr('in','glow1');
+    }
+    merge.append('feMergeNode').attr('in','SourceGraphic');
+  });
+}
+
+// ── Parent bands (function/category header rows) ───────────────────────────────
+function renderParentBands(svg, parents, isRoot) {
+  // Subtle tinted background rect
+  svg.selectAll('.band-bg')
+    .data(parents).join('rect').attr('class','band-bg')
+    .attr('x', d => d.x0).attr('y', d => d.y0)
+    .attr('width',  d => d.x1 - d.x0)
+    .attr('height', d => d.y1 - d.y0)
+    .attr('fill', 'none')
+    .attr('stroke', d => {
+      const c = cmmiColor(d.data.valoracion);
+      return c === '#21262d' ? '#1e2d3d' : hexToRgba(cmmiColorRaw(d.data.valoracion), 0.3);
+    })
+    .attr('stroke-width', 1)
+    .attr('rx', 5);
+
+  // Left accent bar (3px)
+  svg.selectAll('.band-accent')
+    .data(parents).join('rect').attr('class','band-accent')
+    .attr('x', d => d.x0)
+    .attr('y', d => d.y0)
+    .attr('width', 3)
+    .attr('height', isRoot ? 28 : 24)
+    .attr('fill', d => cmmiColor(d.data.valoracion))
+    .attr('rx', 2);
+
+  // Header label
+  svg.selectAll('.band-lbl')
+    .data(parents).join('text').attr('class','band-lbl')
+    .attr('x', d => d.x0 + 9)
+    .attr('y', d => d.y0 + (isRoot ? 19 : 16))
+    .attr('font-size', isRoot ? 13 : 11)
+    .attr('font-weight', 700)
+    .attr('font-family', "'JetBrains Mono', monospace")
+    .attr('fill', d => isRoot ? '#ccdcee' : '#6a869e')
+    .attr('letter-spacing', isRoot ? '.05em' : '.02em')
+    .attr('pointer-events', 'none')
+    .each(function(d) {
+      const t = d3.select(this);
+      const maxW = d.x1 - d.x0 - 16;
+      const label = isRoot
+        ? `${d.data.code}  ·  ${d.data.name}`
+        : `${d.data.code}  ·  ${d.data.name}`;
+      t.text(label);
+      // Truncate if needed
+      const node = this;
+      while (node.getComputedTextLength && node.getComputedTextLength() > maxW && t.text().length > 2) {
+        t.text(t.text().slice(0, -2) + '…');
+      }
+    });
+
+  // Clickable overlay on header band
+  svg.selectAll('.band-click')
+    .data(parents).join('rect').attr('class','band-click')
+    .attr('x', d => d.x0).attr('y', d => d.y0)
+    .attr('width',  d => d.x1 - d.x0)
+    .attr('height', isRoot ? 28 : 24)
+    .attr('fill', 'transparent')
+    .attr('cursor', 'zoom-in')
+    .on('click', (event, d) => drillDown(d.data.code, d.data.type));
+}
+
+// ── Leaf nodes ────────────────────────────────────────────────────────────────
+function renderLeaves(svg, leaves, animateIn) {
+  const useGlow = STATE.focus !== STATE.root;
+
+  const nodeG = svg.selectAll('.hm-node')
+    .data(leaves).join('g')
+    .attr('class', d => {
+      const isN1 = d.data.valoracion != null && d.data.valoracion <= 20;
+      return `hm-node${isN1 ? ' node--n1' : ''}`;
+    })
+    .attr('transform', d => `translate(${d.x0},${d.y0})`)
+    .attr('clip-path', (d, i) => `url(#hm-nc-${i})`);
+
+  // Cell fill rect
+  nodeG.append('rect')
+    .attr('class', 'cell-fill')
+    .attr('width',  d => Math.max(0, d.x1 - d.x0))
+    .attr('height', d => Math.max(0, d.y1 - d.y0))
+    .attr('fill',   d => cmmiColor(d.data.valoracion))
+    .attr('rx', 3)
+    .attr('filter', d => useGlow ? cmmiGlowFilter(d.data.valoracion) : null);
+
+  // Cell content (text labels)
+  nodeG.each(function(d) {
+    const g   = d3.select(this);
+    const nw  = d.x1 - d.x0;
+    const nh  = d.y1 - d.y0;
+    if (nw < 12 || nh < 12) return;
+
+    const pad  = 5;
+    const maxW = nw - pad * 2;
+    let curY   = pad;
+
+    const dark    = d.data.valoracion != null && d.data.valoracion > 35 && d.data.valoracion <= 80;
+    const noData  = d.data.valoracion == null;
+    const txtCol  = dark ? 'rgba(0,0,0,.80)' : noData ? 'rgba(255,255,255,.40)' : 'rgba(255,255,255,.88)';
+    const monoCol = dark ? 'rgba(0,0,0,.88)' : noData ? 'rgba(255,255,255,.35)' : '#fff';
+
+    // Category name (only if enough space)
+    const catFs  = Math.min(12, Math.max(7, nw / 8));
+    const showCat = nh > 34 && catFs >= 7 && d.data.catName;
+
+    if (showCat) {
+      const t = g.append('text')
+        .attr('font-size', catFs)
+        .attr('font-weight', 500)
+        .attr('font-family', "'Inter', system-ui, sans-serif")
+        .attr('fill', txtCol);
+
+      const words = (d.data.catName || '').split(/\s+/);
+      let line = [], lineCount = 1;
+      let tspan = t.append('tspan').attr('x', pad).attr('y', curY + catFs);
+
+      for (const word of words) {
+        const candidate = [...line, word].join(' ');
+        tspan.text(candidate);
+        const len = tspan.node()?.getComputedTextLength?.() ?? 9999;
+        if (line.length > 0 && len > maxW) {
+          tspan.text(line.join(' '));
+          line = [word];
+          lineCount++;
+          if (lineCount > 2) break;
+          tspan = t.append('tspan').attr('x', pad).attr('dy', catFs * 1.2).text(word);
+        } else {
+          line = [...line, word];
+        }
+      }
+      curY += catFs + (lineCount - 1) * catFs * 1.2 + catFs * 1.1;
+    }
+
+    // Subcategory code — monospace bold
+    const codeFs = Math.min(13, Math.max(7, nw / 4));
+    if (codeFs >= 7) {
+      const t = g.append('text')
+        .attr('x', pad).attr('y', curY + codeFs)
+        .attr('font-size', codeFs)
+        .attr('font-weight', 700)
+        .attr('font-family', "'JetBrains Mono', monospace")
+        .attr('fill', monoCol)
+        .text(d.data.code);
+
+      const node = t.node();
+      while (node?.getComputedTextLength?.() > maxW && t.text().length > 2) {
+        t.text(t.text().slice(0, -2) + '…');
+      }
+      curY += codeFs + 4;
+    }
+
+    // Score badge (bottom-right corner if enough room)
+    if (d.data.valoracion != null && nw > 38 && nh > 30) {
+      const scoreFs = Math.min(11, Math.max(8, nw / 6));
+      const scoreStr = Number(d.data.valoracion).toFixed(0);
+      const badgeW   = scoreStr.length * scoreFs * 0.65 + 8;
+      const badgeH   = scoreFs + 6;
+      const bx = nw - badgeW - 3;
+      const by = nh - badgeH - 3;
+
+      if (bx > pad && by > curY - 4) {
+        g.append('rect')
+          .attr('x', bx).attr('y', by)
+          .attr('width', badgeW).attr('height', badgeH)
+          .attr('fill', 'rgba(0,0,0,.30)')
+          .attr('rx', 3);
+        g.append('text')
+          .attr('x', bx + badgeW / 2).attr('y', by + badgeH / 2 + scoreFs * 0.35)
+          .attr('text-anchor', 'middle')
+          .attr('font-size', scoreFs)
+          .attr('font-weight', 700)
+          .attr('font-family', "'JetBrains Mono', monospace")
+          .attr('fill', '#fff')
+          .attr('pointer-events', 'none')
+          .text(scoreStr);
+      }
+    }
+  });
+
+  // ── Interactions ──
+  const tip = document.getElementById('hm-tooltip');
+
+  nodeG
+    .attr('cursor', d => d.data.type === 'subcategory' ? 'pointer' : 'zoom-in')
+    .on('click', (event, d) => {
+      if (tip) tip.style.display = 'none';
+      if (d.data.type === 'subcategory') {
+        openKriPanel(d.data);
+      } else {
+        drillDown(d.data.code, d.data.type);
+      }
+    })
+    .on('mouseover', (event, d) => {
+      if (!tip) return;
+      const v = d.data.valoracion;
+      const isSubcat = d.data.type === 'subcategory';
+      const col      = cmmiColor(v);
+      const bright   = v != null && v > 35 && v <= 80;
+      tip.innerHTML = `
+        <div style="font-size:.64rem;color:#4d7090;margin-bottom:.28rem;font-weight:500;letter-spacing:.05em;text-transform:uppercase;font-family:'JetBrains Mono',monospace">
+          ${d.data.fnName || ''}${d.data.catName ? ` <span style="color:#2a3f56">›</span> ${d.data.catName}` : ''}
+        </div>
+        <div style="font-family:'JetBrains Mono',monospace;font-weight:700;font-size:.88rem;color:#e2eaf4;margin-bottom:.2rem;letter-spacing:.04em">${d.data.code}</div>
+        ${d.data.description ? `<div style="color:#7a90a8;font-size:.7rem;margin-bottom:.32rem;line-height:1.45">${d.data.description.substring(0,110)}</div>` : ''}
+        <div style="display:flex;align-items:center;gap:.45rem;margin-bottom:.16rem">
+          <span style="background:${col};color:${bright?'#000':'#fff'};font-weight:700;font-size:.76rem;padding:.1rem .45rem;border-radius:20px;font-family:'JetBrains Mono',monospace">${v!=null?Number(v).toFixed(1):'—'}</span>
+          <span style="color:#8ba8c0;font-size:.7rem;font-weight:500">${cmmiLabel(v)}</span>
+        </div>
+        <div style="color:#2e4a68;font-size:.63rem;margin-top:.2rem;font-style:italic">${isSubcat?'Click → ver KRIs':'Click → drilldown'}</div>`;
+      tip.style.display = 'block';
+    })
+    .on('mousemove', event => {
+      if (!tip) return;
+      tip.style.left = `${Math.min(event.clientX + 16, window.innerWidth  - 300)}px`;
+      tip.style.top  = `${Math.min(event.clientY + 16, window.innerHeight - 130)}px`;
+    })
+    .on('mouseout', () => { if (tip) tip.style.display = 'none'; });
+
+  // ── Stagger fade-in ──
+  if (animateIn) {
+    nodeG.style('opacity', 0)
+      .transition()
+      .delay((d, i) => Math.min(i * STAGGER_MS, STAGGER_MAX_MS))
+      .duration(TRANSITION_MS + 60)
+      .ease(d3.easeCubicOut)
+      .style('opacity', 1);
+  }
+}
+
+// ── Drilldown ─────────────────────────────────────────────────────────────────
+function drillDown(code, type) {
+  closeKriPanel();
+  const oldSvg = d3.select('#chart svg');
+
+  // Find node in full hierarchy
+  let found = null;
+  STATE.root.each(n => {
+    if (n.data.code === code && n.data.type === type) found = n;
+  });
+  if (!found) return;
+
+  oldSvg.transition().duration(TRANSITION_MS).style('opacity', 0)
+    .on('end', () => {
+      STATE.focus = found;
+      render(true);
+      updateBreadcrumb();
+    });
+}
+
+function drillToNode(node) {
+  closeKriPanel();
+  const oldSvg = d3.select('#chart svg');
+  oldSvg.transition().duration(TRANSITION_MS).style('opacity', 0)
+    .on('end', () => {
+      STATE.focus = node;
+      render(true);
+      updateBreadcrumb();
+    });
+}
+
+// ── Breadcrumb ────────────────────────────────────────────────────────────────
+function updateBreadcrumb(subData) {
+  const bc = document.getElementById('breadcrumb');
+  if (!bc) return;
+
+  let items;
+  if (subData) {
+    items = [
+      { label: 'NIST CSF 2.0', node: STATE.root },
+      { label: subData.fnName.toUpperCase(),  code: subData.fnCode,  type: 'function'  },
+      { label: subData.catName.toUpperCase(), code: subData.catCode, type: 'category'  },
+      { label: (subData.description || subData.code).substring(0, 48).toUpperCase(), isCurrent: true },
+    ];
+  } else {
+    const path = STATE.focus.ancestors().reverse();
+    items = path.map((node, i) => ({
+      label: node.data.code === 'ROOT' ? 'NIST CSF 2.0' : (node.data.code + (node.data.name ? '  ' + node.data.name.toUpperCase() : '')).substring(0, 38),
+      node,
+      isCurrent: i === path.length - 1,
+    }));
+  }
+
+  bc.innerHTML = items.map((item, i) =>
+    `${i > 0 ? '<span class="bc-sep"> › </span>' : ''}
+     <span class="bc-item ${item.isCurrent ? 'current' : ''}"
+           data-code="${item.code || ''}"
+           data-type="${item.type || ''}"
+           data-node="${item.isCurrent ? '' : i}">${item.label}</span>`
+  ).join('');
+
+  // Bind clicks on non-current items
+  bc.querySelectorAll('.bc-item:not(.current)').forEach((el, idx) => {
+    el.addEventListener('click', () => {
+      const code = el.dataset.code, type = el.dataset.type;
+      if (code && type) {
+        drillDown(code, type);
+      } else {
+        // Navigate by path index
+        const nodeIdx = parseInt(el.dataset.node);
+        const path = STATE.focus.ancestors().reverse();
+        const target = !isNaN(nodeIdx) ? (path[nodeIdx] || STATE.root) : STATE.root;
+        drillToNode(target);
+      }
+    });
+  });
+}
+
+// ── KRI Panel ─────────────────────────────────────────────────────────────────
+async function openKriPanel(sub) {
+  updateBreadcrumb(sub);
+
+  // Badge color
+  const badgeEl = document.getElementById('kp-badge');
+  if (badgeEl) {
+    const col    = cmmiColor(sub.valoracion);
+    const bright = sub.valoracion != null && sub.valoracion > 35 && sub.valoracion <= 80;
+    badgeEl.textContent = sub.valoracion != null ? cmmiLabel(sub.valoracion).split(' ')[0] : 'ND';
+    badgeEl.style.background  = sub.valoracion != null ? col : '#2e4055';
+    badgeEl.style.color       = bright ? '#000' : '#fff';
+    badgeEl.style.boxShadow   = sub.valoracion != null ? `0 0 10px ${col}60` : 'none';
+  }
+
+  const titleEl = document.getElementById('kp-title');
+  const descEl  = document.getElementById('kp-desc');
+  const listEl  = document.getElementById('kp-list');
+
+  if (titleEl) titleEl.textContent = `${sub.fnName}  ·  ${sub.catName}`;
+  if (descEl)  descEl.textContent  = `${sub.code} — ${sub.description || ''}`;
+  if (listEl)  listEl.innerHTML    = '<div class="kp-empty">Cargando KRIs…</div>';
+
+  // Open panel
+  const wrap = document.getElementById('kri-panel-wrap');
+  if (wrap) {
+    wrap.classList.add('open');
+    // Re-render chart after transition ends
+    clearTimeout(STATE.resizeTimer);
+    STATE.resizeTimer = setTimeout(() => render(false), 340);
+  }
+
+  try {
+    const rows = await (await fetch(`/api/kris?subcategoryId=${sub.subId}`)).json();
+    const kris = rows.filter(r => r.kri_id);
+
+    if (!listEl) return;
+
+    if (!kris.length) {
+      listEl.innerHTML = `
+        <div class="kp-empty">Sin KRIs asignados.</div>
+        <button class="kp-add-btn" onclick="addKriForSub(${sub.subId})">＋ Agregar KRI</button>`;
+      return;
+    }
+
+    listEl.innerHTML = kris.map(k => {
+      const v      = k.valoracion != null ? Number(k.valoracion).toFixed(1) : null;
+      const col    = cmmiColor(k.valoracion);
+      const bright = k.valoracion != null && k.valoracion > 35 && k.valoracion <= 80;
+      const txtCol = bright ? '#000' : '#fff';
+      const border = k.valoracion != null ? col : '#2e4055';
+      const barPct = k.valoracion != null ? k.valoracion : 0;
+      return `
+        <div class="kp-card" style="border-left-color:${border}">
+          <button class="kp-edit-btn" onclick="openEditModal(${sub.subId},${k.kri_id})" title="Editar">✎</button>
+          <div class="kp-card-name">${k.kri_name}</div>
+          ${k.kri_description ? `<div class="kp-card-desc">${k.kri_description}</div>` : ''}
+          ${k.kri_formula     ? `<div class="kp-card-formula">${k.kri_formula}</div>`     : ''}
+          <div class="kp-card-footer">
+            ${v != null ? `<span class="kp-score-badge" style="background:${col};color:${txtCol};box-shadow:0 0 7px ${col}60">${v}</span>` : ''}
+            <span class="kp-cmmi-label">${cmmiLabel(k.valoracion)}</span>
+            ${k.last_saved_by ? `<span class="kp-saved-by">${k.last_saved_by}</span>` : ''}
+          </div>
+          ${v != null ? `
+          <div class="kp-score-bar">
+            <div class="kp-score-bar-fill" style="width:${barPct}%;background:${col}"></div>
+          </div>` : ''}
+        </div>`;
+    }).join('') + `<button class="kp-add-btn" onclick="addKriForSub(${sub.subId})">＋ Agregar KRI</button>`;
+
+  } catch {
+    if (listEl) listEl.innerHTML = '<div class="kp-empty" style="color:#f85149">Error al cargar.</div>';
+  }
+}
+
+function closeKriPanel() {
+  const wrap = document.getElementById('kri-panel-wrap');
+  if (!wrap || !wrap.classList.contains('open')) return;
+  wrap.classList.remove('open');
+  clearTimeout(STATE.resizeTimer);
+  STATE.resizeTimer = setTimeout(() => render(false), 340);
+  updateBreadcrumb();
+}
+
+// ── KRI Edit Modal ────────────────────────────────────────────────────────────
+function addKriForSub(subcategoryId) {
+  const sub = STATE.subById[subcategoryId];
+  if (!sub) return;
+  openEditModal(subcategoryId, null, sub);
+}
+
+async function openEditModal(subcategoryId, kriId, subOverride) {
+  STATE.editSubId = subcategoryId;
+  STATE.editKriId = kriId || null;
+
+  const sub = subOverride || STATE.subById[subcategoryId];
+  if (!sub) return;
+
+  // Fill context
+  const ctxFn  = document.getElementById('hm-ctx-fn');
+  const ctxCat = document.getElementById('hm-ctx-cat');
+  const ctxSub = document.getElementById('hm-ctx-sub');
+  if (ctxFn)  ctxFn.textContent  = `${sub.fnCode} · ${sub.fnName}`;
+  if (ctxCat) ctxCat.textContent = `${sub.catCode} · ${sub.catName}`;
+  if (ctxSub) ctxSub.textContent = `${sub.code} — ${sub.description || ''}`;
+
+  const titleEl = document.getElementById('hm-modal-title');
+  if (titleEl) titleEl.textContent = kriId ? 'Editar KRI' : 'Nuevo KRI';
+
+  // Pre-fill fields
+  document.getElementById('hm-kri-name').value    = '';
+  document.getElementById('hm-kri-desc').value    = '';
+  document.getElementById('hm-kri-formula').value = '';
+  document.getElementById('hm-kri-val').value     = '';
+  document.getElementById('hm-kri-flag').value    = '';
+  updateCmmiHint();
+
+  document.getElementById('hm-btn-del').style.display = kriId ? '' : 'none';
+  document.getElementById('hm-history-box').style.display = 'none';
+
+  if (kriId) {
+    try {
+      const res  = await fetch(`/api/kris?subcategoryId=${subcategoryId}`);
+      const rows = await res.json();
+      const kri  = rows.find(r => r.kri_id === kriId);
+      if (kri) {
+        document.getElementById('hm-kri-name').value    = kri.kri_name        || '';
+        document.getElementById('hm-kri-desc').value    = kri.kri_description || '';
+        document.getElementById('hm-kri-formula').value = kri.kri_formula     || '';
+        document.getElementById('hm-kri-val').value     = kri.valoracion != null ? Number(kri.valoracion).toFixed(1) : '';
+        document.getElementById('hm-kri-flag').value    = kri.cmmi_flag       || '';
+        updateCmmiHint();
+        loadKriHistory(kriId);
+      }
+    } catch { /* ignore */ }
+  }
+
+  document.getElementById('hm-kri-modal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+  STATE.editSubId = null;
+  STATE.editKriId = null;
+  document.getElementById('hm-kri-modal').classList.add('hidden');
+}
+
+function updateCmmiHint() {
+  const val   = parseFloat(document.getElementById('hm-kri-val').value);
+  const hint  = document.getElementById('hm-cmmi-hint');
+  if (!hint) return;
+  if (isNaN(val)) { hint.textContent = ''; return; }
+  const clamped = Math.max(0, Math.min(100, val));
+  hint.textContent  = cmmiLabel(clamped);
+  hint.style.color  = `var(--color-${kriClass(clamped)})`;
+}
+
+async function saveKri() {
+  const name = document.getElementById('hm-kri-name').value.trim();
+  const val  = parseFloat(document.getElementById('hm-kri-val').value);
+  if (!name) { toast('El nombre del KRI es obligatorio', 'error'); return; }
+  if (isNaN(val) || val < 0 || val > 100) { toast('Valoración debe estar entre 0 y 100', 'error'); return; }
+
+  const body = {
+    kri_id:          STATE.editKriId || undefined,
+    kri_name:        name,
+    kri_description: document.getElementById('hm-kri-desc').value.trim(),
+    kri_formula:     document.getElementById('hm-kri-formula').value.trim(),
+    cmmi_flag:       document.getElementById('hm-kri-flag').value || null,
+    valoracion:      val,
+  };
+
+  const btn = document.getElementById('hm-btn-save');
+  btn.disabled = true;
+  try {
+    const res = await fetch(`/api/kris/${STATE.editSubId}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) {
+      const text = await res.text();
+      let msg = `Error ${res.status}`;
+      try { msg = JSON.parse(text).error || msg; } catch {}
+      throw new Error(msg);
+    }
+    toast('KRI guardado');
+    closeEditModal();
+    await loadData();
+  } catch (e) {
+    toast(e.message || 'Error al guardar', 'error');
+  } finally { btn.disabled = false; }
+}
+
+async function deleteKri() {
+  if (!confirm('¿Eliminar este KRI?')) return;
+  try {
+    const res = await fetch(`/api/kris/${STATE.editKriId}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error((await res.json()).error);
+    toast('KRI eliminado');
+    closeEditModal();
+    await loadData();
+  } catch {
+    toast('Error al eliminar', 'error');
+  }
+}
+
+async function loadKriHistory(kriId) {
+  const box  = document.getElementById('hm-history-box');
+  const list = document.getElementById('hm-history-list');
+  if (!box || !list) return;
+  try {
+    const res  = await fetch(`/api/kris/${kriId}/history`);
+    const rows = await res.json();
+    if (!rows.length) { box.style.display = 'none'; return; }
+    box.style.display = '';
+    list.innerHTML = rows.map(h => `
+      <div class="hm-history-row">
+        <span style="color:var(--color-${kriClass(h.valoracion)});font-weight:700;font-family:'JetBrains Mono',monospace">
+          ${Number(h.valoracion).toFixed(1)}
+          <span style="font-size:.68rem;font-weight:400;color:var(--text-muted)"> ${cmmiLevel(h.valoracion)}</span>
+        </span>
+        <span style="color:var(--text-muted);font-size:.72rem">${h.saved_by}</span>
+        <span style="color:var(--text-muted);font-size:.7rem">${formatDT(h.saved_at)}</span>
+      </div>`).join('');
+  } catch { box.style.display = 'none'; }
+}
+
+function formatDT(isoStr) {
+  if (!isoStr) return '—';
+  const d = new Date(isoStr.replace(' ', 'T') + 'Z');
+  return d.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
+}
+
+// ── Export ────────────────────────────────────────────────────────────────────
+async function exportHeatmap() {
+  const format = document.getElementById('exportFormat').value;
+  let rows;
+  try {
+    const res = await fetch('/api/kris');
+    rows = await res.json();
+  } catch {
+    toast('Error al obtener datos', 'error');
+    return;
+  }
+  if      (format === 'json') exportJSON(rows);
+  else if (format === 'csv')  exportCSV(rows);
+  else if (format === 'xml')  exportXML(rows);
+  else if (format === 'xlsx') await exportExcelFile(new URLSearchParams(), 'btnExport');
+}
+
+// ── UI bindings ───────────────────────────────────────────────────────────────
+function bindUI() {
+  // KRI panel close
+  document.getElementById('kp-close')?.addEventListener('click', closeKriPanel);
+
+  // Export button
+  document.getElementById('btnExport')?.addEventListener('click', exportHeatmap);
+
+  // Edit modal
+  document.getElementById('hm-modal-close')?.addEventListener('click', closeEditModal);
+  document.getElementById('hm-btn-cancel')?.addEventListener('click', closeEditModal);
+  document.getElementById('hm-btn-save')?.addEventListener('click', saveKri);
+  document.getElementById('hm-btn-del')?.addEventListener('click', deleteKri);
+  document.getElementById('hm-kri-modal')?.addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeEditModal();
+  });
+  document.getElementById('hm-kri-val')?.addEventListener('input', updateCmmiHint);
+
+  // Keyboard: Escape → close panel or go up
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (!document.getElementById('hm-kri-modal')?.classList.contains('hidden')) {
+        closeEditModal();
+      } else if (document.getElementById('kri-panel-wrap')?.classList.contains('open')) {
+        closeKriPanel();
+      } else if (STATE.focus && STATE.focus !== STATE.root) {
+        const parent = STATE.focus.parent;
+        if (parent) drillToNode(parent);
+      }
+    }
+  });
+
+  // ResizeObserver
+  const chartEl = document.getElementById('chart');
+  if (chartEl) {
+    const ro = new ResizeObserver(() => {
+      clearTimeout(STATE.resizeTimer);
+      STATE.resizeTimer = setTimeout(() => render(false), 60);
+    });
+    ro.observe(chartEl);
+  }
+}
+
+// ── Color helpers ─────────────────────────────────────────────────────────────
 function cmmiColor(val) {
-  if (val == null) return '#475569';
+  if (val == null) return '#21262d';
   const v  = Math.max(0, Math.min(100, val));
   let lo = COLOR_STOPS[0], hi = COLOR_STOPS[COLOR_STOPS.length - 1];
   for (let i = 0; i < COLOR_STOPS.length - 1; i++) {
@@ -78,425 +850,37 @@ function cmmiColor(val) {
   return `rgb(${r},${g},${b})`;
 }
 
-// ── Build ECharts tree data ───────────────────────────────────────────────────
-function buildTreeData() {
-  return allData.map(fn => ({
-    id:         fn.code,
-    name:       `${fn.name}  ·  ${fn.code}`,
-    label_full: fn.name,
-    type:       'function',
-    value:      fn.totalSubcategories,
-    valoracion: fn.avgValoracion,
-    itemStyle:  { color: cmmiColor(fn.avgValoracion) },
-    children: fn.categories.map(cat => ({
-      id:         cat.code,
-      name:       `${cat.name}  ·  ${cat.code}`,
-      label_full: cat.name,
-      type:       'category',
-      catCode:    cat.code,
-      value:      cat.totalSubcategories,
-      valoracion: cat.avgValoracion,
-      itemStyle:  { color: cmmiColor(cat.avgValoracion) },
-      children: cat.subcategories.map(s => ({
-        id:         `sub_${s.id}`,
-        name:       s.code,
-        label_full: s.kri_name || '',
-        type:       'subcategory',
-        value:      1,
-        valoracion: s.valoracion,
-        subId:      s.id,
-        itemStyle:  { color: cmmiColor(s.valoracion) },
-      }))
-    }))
-  }));
+// Returns raw hex for alpha mixing
+function cmmiColorRaw(val) {
+  const c = cmmiColor(val);
+  if (c === '#21262d') return '#21262d';
+  // parse rgb(r,g,b) → hex
+  const m = c.match(/rgb\((\d+),(\d+),(\d+)\)/);
+  if (!m) return c;
+  return '#' + [m[1],m[2],m[3]].map(n => parseInt(n).toString(16).padStart(2,'0')).join('');
 }
 
-// ── ECharts Treemap ───────────────────────────────────────────────────────────
-function renderTreemap() {
-  const el = document.getElementById('treemapChart');
-
-  if (echartsInst) { echartsInst.dispose(); }
-  echartsInst = echarts.init(el, null, { renderer: 'canvas' });
-
-  const option = {
-    backgroundColor: '#1e293b',
-    tooltip: {
-      show: true,
-      backgroundColor: '#0f172a',
-      borderColor: '#334155',
-      textStyle: { color: '#f1f5f9', fontFamily: 'Segoe UI, system-ui, sans-serif' },
-      formatter: (params) => {
-        const d = params.data;
-        if (!d) return '';
-        const val = d.valoracion != null ? Number(d.valoracion).toFixed(1) : '—';
-        const lvl = d.valoracion != null ? cmmiLevelName(d.valoracion) : 'Sin datos';
-        const kri = d.label_full ? `<br><span style="color:#94a3b8">${d.label_full}</span>` : '';
-        return `<b>${d.name}</b>${kri}<br>Valoración: <b style="color:${cmmiColor(d.valoracion)}">${val}</b> · ${lvl}`;
-      }
-    },
-    series: [{
-      type:       'treemap',
-      data:       buildTreeData(),
-      width:      '100%',
-      height:     '100%',
-      roam:       false,
-      nodeClick:  false,
-      breadcrumb: {
-        show:      true,
-        bottom:    4,
-        height:    28,
-        itemStyle: { color: '#1e293b', borderColor: '#475569', borderWidth: 1 },
-        textStyle: { color: '#f1f5f9', fontSize: 13 },
-        emphasis:  { itemStyle: { color: '#334155' } },
-      },
-      visibleMin: 200,
-      levels: [
-        // ── Raíz implícita (nivel 0) — ocultar ───────────────────────────────
-        {
-          itemStyle: { borderColor: '#1e293b', borderWidth: 0, gapWidth: 0 },
-          label:      { show: false },
-          upperLabel: { show: false },
-        },
-        // ── Funciones (nivel 1) ───────────────────────────────────────────────
-        {
-          itemStyle: { borderColor: '#0f172a', borderWidth: 6, gapWidth: 6 },
-          upperLabel: {
-            show:            true,
-            height:          52,
-            fontSize:        20,
-            fontWeight:      'bold',
-            color:           '#fff',
-            backgroundColor: 'rgba(0,0,0,0.30)',
-            padding:         [8, 14],
-            overflow:        'truncate',
-          },
-          label: { show: false },
-        },
-        // ── Categorías (nivel 2) ──────────────────────────────────────────────
-        {
-          itemStyle: { borderColor: '#1e293b', borderWidth: 3, gapWidth: 3 },
-          upperLabel: {
-            show:            true,
-            height:          30,
-            fontSize:        12,
-            fontWeight:      '600',
-            color:           '#fff',
-            backgroundColor: 'rgba(0,0,0,0.22)',
-            padding:         [5, 8],
-            overflow:        'truncate',
-          },
-          label: { show: false },
-        },
-        // ── Subcategorías (nivel 3, hojas) ────────────────────────────────────
-        {
-          itemStyle: { borderColor: '#1e293b', borderWidth: 1, gapWidth: 1 },
-          label: {
-            show:     true,
-            fontSize: 9,
-            color:    '#fff',
-            overflow: 'truncate',
-          },
-          upperLabel: { show: false },
-        },
-      ],
-    }]
-  };
-
-  echartsInst.setOption(option);
-
-  // Click routing by node type
-  echartsInst.on('click', (params) => {
-    if (!params.data) return;
-    const d = params.data;
-    if (d.type === 'subcategory') {
-      const sub = subById[d.subId];
-      if (sub) openSubcategoryDrilldown(sub);
-    } else {
-      // function or category → zoom into treemap
-      echartsInst.dispatchAction({
-        type:         'treemapZoomToNode',
-        seriesIndex:  0,
-        targetNodeId: d.id,
-      });
-    }
-  });
-
-  const ro = new ResizeObserver(() => echartsInst.resize());
-  ro.observe(el);
-  window.addEventListener('resize', () => echartsInst.resize());
+function hexToRgba(hex, alpha) {
+  const r = parseInt(hex.slice(1,3),16);
+  const g = parseInt(hex.slice(3,5),16);
+  const b = parseInt(hex.slice(5,7),16);
+  return `rgba(${r},${g},${b},${alpha})`;
 }
 
-// ── Modal ─────────────────────────────────────────────────────────────────────
-function bindModal() {
-  document.getElementById('modalClose').addEventListener('click', closeModal);
-  document.getElementById('btnCancelKri').addEventListener('click', closeModal);
-  document.getElementById('btnSaveKri').addEventListener('click', saveKri);
-  document.getElementById('btnDeleteKri').addEventListener('click', deleteKri);
-  document.getElementById('kriModal').addEventListener('click', e => {
-    if (e.target === e.currentTarget) closeModal();
-  });
-  document.getElementById('kri_valoracion').addEventListener('input', updateCmmiHint);
-
-  // Drilldown modal
-  const closeDd = () => document.getElementById('drilldownModal').classList.add('hidden');
-  document.getElementById('ddClose').addEventListener('click', closeDd);
-  document.getElementById('ddCancel').addEventListener('click', closeDd);
-  document.getElementById('drilldownModal').addEventListener('click', e => {
-    if (e.target === e.currentTarget) closeDd();
-  });
+function cmmiGlowFilter(val) {
+  if (val == null) return null;
+  if (val <= 20) return 'url(#glow-n1)';
+  if (val <= 40) return 'url(#glow-n2)';
+  if (val <= 60) return 'url(#glow-n3)';
+  if (val <= 80) return 'url(#glow-n4)';
+  return 'url(#glow-n5)';
 }
 
-function updateCmmiHint() {
-  const input = document.getElementById('kri_valoracion');
-  let v = parseFloat(input.value);
-  if (!isNaN(v)) {
-    if (v > 100) { v = 100; input.value = '100'; }
-    if (v < 0)   { v = 0;   input.value = '0'; }
-  }
-  const hint = document.getElementById('cmmiLevelHint');
-  if (isNaN(v)) { hint.textContent = ''; return; }
-  hint.textContent = cmmiLevelName(v);
-  hint.style.color = `var(--color-${kriClass(v)})`;
-}
-
-function openModal(sub) {
-  editingSubId = sub.id;
-  editingKriId = sub.kri_id || null;
-  document.getElementById('fieldFuncion').textContent      = `${sub.fnName} (${sub.fnCode})`;
-  document.getElementById('fieldCategoria').textContent   = `${sub.catName} (${sub.catCode})`;
-  document.getElementById('fieldSubcategoria').textContent = sub.code;
-  document.getElementById('fieldDescripcion').textContent = sub.description;
-  document.getElementById('kri_name').value               = sub.kri_name        || '';
-  document.getElementById('kri_description').value        = sub.kri_description || '';
-  document.getElementById('kri_formula').value            = sub.kri_formula     || '';
-  document.getElementById('kri_valoracion').value         = sub.valoracion != null ? Number(sub.valoracion).toFixed(1) : '';
-  document.getElementById('kri_cmmi_flag').value          = sub.cmmi_flag       || '';
-  updateCmmiHint();
-  document.getElementById('btnDeleteKri').style.display = sub.kri_id ? '' : 'none';
-  if (sub.kri_id) loadHeatmapHistory(sub.kri_id);
-  else document.getElementById('kriHistoryBox').style.display = 'none';
-  document.getElementById('kriModal').classList.remove('hidden');
-}
-
-async function loadHeatmapHistory(kriId) {
-  const box  = document.getElementById('kriHistoryBox');
-  const list = document.getElementById('kriHistoryList');
-  try {
-    const res  = await fetch(`/api/kris/${kriId}/history`);
-    const rows = await res.json();
-    if (!rows.length) { box.style.display = 'none'; return; }
-    box.style.display = '';
-    list.innerHTML = rows.map(h => `
-      <div style="display:flex;justify-content:space-between;align-items:center;
-                  padding:.35rem .5rem;border-bottom:1px solid var(--border)">
-        <span style="color:var(--color-${kriClass(h.valoracion)});font-weight:700;min-width:3.5rem">
-          ${Number(h.valoracion).toFixed(1)}
-          <span style="font-size:.72rem;font-weight:400;color:var(--text-muted)"> ${cmmiLevel(h.valoracion)}</span>
-        </span>
-        <span style="color:var(--text-muted)">${h.saved_by}</span>
-        <span style="color:var(--text-muted)">${formatHeatmapDateTime(h.saved_at)}</span>
-      </div>
-    `).join('');
-  } catch { box.style.display = 'none'; }
-}
-
-function formatHeatmapDateTime(isoStr) {
-  if (!isoStr) return '—';
-  const d = new Date(isoStr.replace(' ', 'T') + 'Z');
-  return d.toLocaleString('es-ES', { day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' });
-}
-
-function closeModal() {
-  editingSubId = null;
-  editingKriId = null;
-  document.getElementById('kriModal').classList.add('hidden');
-}
-
-async function saveKri() {
-  const kri_name   = document.getElementById('kri_name').value.trim();
-  const valoracion = parseFloat(document.getElementById('kri_valoracion').value);
-  if (!kri_name) { toast('El nombre del KRI es obligatorio', 'error'); return; }
-  if (isNaN(valoracion) || valoracion < 0 || valoracion > 100) { toast('La valoración debe estar entre 0 y 100', 'error'); return; }
-
-  const body = {
-    kri_id:          editingKriId || undefined,
-    kri_name,
-    kri_description: document.getElementById('kri_description').value.trim(),
-    kri_formula:     document.getElementById('kri_formula').value.trim(),
-    cmmi_flag:       document.getElementById('kri_cmmi_flag').value || null,
-    valoracion,
-  };
-
-  const btn = document.getElementById('btnSaveKri');
-  btn.disabled = true;
-  try {
-    const res = await fetch(`/api/kris/${editingSubId}`, {
-      method:  'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify(body)
-    });
-    if (!res.ok) {
-      const text = await res.text();
-      let msg = `Error ${res.status}`;
-      try { msg = JSON.parse(text).error || msg; } catch {}
-      throw new Error(msg);
-    }
-    toast('KRI guardado');
-    closeModal();
-    await loadData();
-  } catch (e) {
-    toast(e.message || 'Error al guardar', 'error');
-  } finally { btn.disabled = false; }
-}
-
-async function deleteKri() {
-  if (!confirm('¿Eliminar este KRI?')) return;
-  try {
-    const res = await fetch(`/api/kris/${editingKriId}`, { method: 'DELETE' });
-    if (!res.ok) throw new Error((await res.json()).error);
-    toast('KRI eliminado');
-    closeModal();
-    await loadData();
-  } catch {
-    toast('Error al eliminar', 'error');
-  }
-}
-
-// ── Export ────────────────────────────────────────────────────────────────────
-async function exportHeatmap() {
-  const format = document.getElementById('exportFormat').value;
-  // Fetch all KRI rows (no filters — heatmap shows full dataset)
-  let rows;
-  try {
-    const res = await fetch('/api/kris');
-    rows = await res.json();
-  } catch (e) {
-    toast('Error al obtener datos', 'error');
-    return;
-  }
-  if (format === 'json')      exportJSON(rows);
-  else if (format === 'csv')  exportCSV(rows);
-  else if (format === 'xml')  exportXML(rows);
-  else if (format === 'xlsx') await exportExcelFile(new URLSearchParams(), 'btnExport');
-}
-
-// ── Subcategory Drilldown ─────────────────────────────────────────────────────
-async function openSubcategoryDrilldown(sub) {
-  const modal   = document.getElementById('drilldownModal');
-  const content = document.getElementById('ddContent');
-  document.getElementById('ddTitle').textContent    = 'KRIs de Subcategoría';
-  document.getElementById('ddSubtitle').textContent = '';
-
-  // Context fields (función / categoría / subcategoría)
-  const contextBox = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:.5rem .75rem;padding:.75rem 1rem;background:var(--surface);border-bottom:1px solid var(--border)">
-      <div class="form-group" style="margin:0">
-        <label style="font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Función</label>
-        <div class="field-readonly">${sub.fnCode} · ${sub.fnName}</div>
-      </div>
-      <div class="form-group" style="margin:0">
-        <label style="font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Categoría</label>
-        <div class="field-readonly">${sub.catCode} · ${sub.catName}</div>
-      </div>
-      <div class="form-group" style="margin:0;grid-column:1/-1">
-        <label style="font-size:.72rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.06em">Subcategoría</label>
-        <div class="field-readonly" style="display:flex;gap:.75rem;align-items:baseline">
-          <span style="font-weight:700;white-space:nowrap">${sub.code}</span>
-          <span style="font-size:.82rem;color:var(--text-muted)">${sub.description}</span>
-        </div>
-      </div>
-    </div>`;
-
-  // Add KRI button
-  const addBtn = `
-    <div style="padding:.6rem 1rem;border-bottom:1px solid var(--border);display:flex;justify-content:flex-end">
-      <button class="btn-icon btn-icon-add" onclick="ddAddKri(${sub.id})" title="Agregar KRI">＋</button>
-    </div>`;
-
-  content.innerHTML = contextBox + '<div style="padding:1.5rem;text-align:center;color:var(--text-muted)">Cargando...</div>';
-  modal.classList.remove('hidden');
-
-  try {
-    const res  = await fetch(`/api/kris?subcategoryId=${sub.id}`);
-    const rows = await res.json();
-    const kris = rows.filter(r => r.kri_id);
-
-    if (!kris.length) {
-      content.innerHTML = contextBox + addBtn + `
-        <div style="padding:1.5rem;text-align:center;color:var(--text-muted);font-style:italic">
-          Sin KRIs asignados
-        </div>`;
-      return;
-    }
-
-    const rowsHtml = kris.map(k => {
-      const val = k.valoracion != null ? Number(k.valoracion).toFixed(1) : '—';
-      const cls = k.valoracion != null ? kriClass(k.valoracion) : 'nodata';
-      const lvl = k.valoracion != null ? cmmiLevel(k.valoracion) : '—';
-      const desc = k.kri_description
-        ? `<div style="font-size:.78rem;color:var(--text-muted);margin-top:.2rem">${k.kri_description}</div>` : '';
-      const formula = k.kri_formula
-        ? `<div style="font-size:.75rem;color:var(--text-muted);margin-top:.15rem;font-style:italic">Fórmula: ${k.kri_formula}</div>` : '';
-      return `
-        <tr>
-          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border)">
-            <div style="font-weight:600;font-size:.88rem">${k.kri_name}</div>
-            ${desc}${formula}
-          </td>
-          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:center;font-weight:700;font-size:1rem;color:var(--color-${cls});white-space:nowrap">
-            ${val}
-          </td>
-          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:center;font-size:.8rem;white-space:nowrap">
-            ${lvl}
-          </td>
-          <td style="padding:.6rem .75rem;border-bottom:1px solid var(--border);text-align:center">
-            <button class="btn-icon" onclick="ddEditKri(${sub.id}, ${k.kri_id})" title="Editar">✎</button>
-          </td>
-        </tr>`;
-    }).join('');
-
-    content.innerHTML = contextBox + addBtn + `
-      <table style="width:100%;border-collapse:collapse;font-size:.88rem">
-        <thead>
-          <tr style="background:var(--surface);border-bottom:2px solid var(--border)">
-            <th style="padding:.5rem .75rem;text-align:left">KRI</th>
-            <th style="padding:.5rem .75rem;text-align:center">Valor</th>
-            <th style="padding:.5rem .75rem;text-align:center">CMMI</th>
-            <th style="padding:.5rem .75rem;text-align:center">Acc.</th>
-          </tr>
-        </thead>
-        <tbody>${rowsHtml}</tbody>
-      </table>`;
-
-  } catch (e) {
-    content.innerHTML = `<div style="padding:1.5rem;color:var(--color-n1)">Error: ${e.message}</div>`;
-  }
-}
-
-function ddAddKri(subcategoryId) {
-  document.getElementById('drilldownModal').classList.add('hidden');
-  const sub = subById[subcategoryId];
-  if (sub) openModal({ ...sub, kri_id: null, kri_name: '', kri_description: '', kri_formula: '', cmmi_flag: '', valoracion: null });
-}
-
-async function ddEditKri(subcategoryId, kriId) {
-  document.getElementById('drilldownModal').classList.add('hidden');
-  const base = subById[subcategoryId];
-  if (!base) return;
-  try {
-    const res  = await fetch(`/api/kris?subcategoryId=${subcategoryId}`);
-    const rows = await res.json();
-    const kri  = rows.find(r => r.kri_id === kriId);
-    openModal(kri ? {
-      ...base,
-      kri_id:          kri.kri_id,
-      kri_name:        kri.kri_name,
-      kri_description: kri.kri_description,
-      kri_formula:     kri.kri_formula,
-      cmmi_flag:       kri.cmmi_flag,
-      valoracion:      kri.valoracion,
-    } : { ...base, kri_id: kriId });
-  } catch {
-    openModal({ ...base, kri_id: kriId });
-  }
+function cmmiLabel(val) {
+  if (val == null) return 'Sin datos';
+  if (val <= 20)  return 'N1 Inicial';
+  if (val <= 40)  return 'N2 Gestionado';
+  if (val <= 60)  return 'N3 Definido';
+  if (val <= 80)  return 'N4 Cuant. Gestionado';
+  return 'N5 Optimizado';
 }
