@@ -31,8 +31,8 @@
     <!-- Login form -->
     <form id="loginForm" autocomplete="on">
       <div class="form-group">
-        <label>Usuario</label>
-        <input type="text" id="loginUsername" name="username" placeholder="ciso" autocomplete="username" required>
+        <label>Correo electrónico</label>
+        <input type="email" id="loginUsername" name="username" placeholder="tu@empresa.com" autocomplete="username" required>
       </div>
       <div class="form-group">
         <label>Contraseña</label>
@@ -44,8 +44,8 @@
     <!-- Register form (hidden by default) -->
     <form id="registerForm" autocomplete="on" style="display:none">
       <div class="form-group">
-        <label>Usuario</label>
-        <input type="text" id="regUsername" name="username" placeholder="mi_usuario" autocomplete="username" required minlength="3">
+        <label>Correo electrónico</label>
+        <input type="email" id="regEmail" name="email" placeholder="tu@empresa.com" autocomplete="email" required>
       </div>
       <div class="form-group">
         <label>Contraseña</label>
@@ -58,8 +58,17 @@
       <button type="submit" class="btn btn-primary btn-login" id="registerBtn">Crear cuenta</button>
     </form>
 
+    <!-- Verification pending panel (hidden by default) -->
+    <div id="verifyPending" style="display:none; text-align:center; padding:1rem 0">
+      <div style="font-size:2.5rem; margin-bottom:.75rem">📧</div>
+      <h3 style="margin:0 0 .5rem; font-size:1.1rem">Revisa tu bandeja de entrada</h3>
+      <p style="color:var(--text-secondary); font-size:.9rem; margin:0">
+        Te hemos enviado un enlace de verificación.<br>Haz clic en él para activar tu cuenta.
+      </p>
+    </div>
+
     <!-- Sandbox demo -->
-    <div class="auth-divider">o</div>
+    <div class="auth-divider" id="authDivider">o</div>
     <button class="btn-demo" id="demoBtn" type="button">Probar sin registrarse</button>
   </div>
 </div>
@@ -131,6 +140,7 @@ loginForm.addEventListener('submit', async (e) => {
 registerForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   clearError();
+  const email           = document.getElementById('regEmail').value.trim();
   const password        = document.getElementById('regPassword').value;
   const passwordConfirm = document.getElementById('regPasswordConfirm').value;
 
@@ -147,14 +157,15 @@ registerForm.addEventListener('submit', async (e) => {
     const res = await fetch('/api/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        username: document.getElementById('regUsername').value.trim(),
-        password
-      })
+      body: JSON.stringify({ email, password })
     });
     const data = await res.json();
-    if (res.ok) {
-      window.location.href = '/heatmap.html';
+    if (res.ok && data.pending) {
+      registerForm.style.display = 'none';
+      document.querySelector('.auth-tabs').style.display = 'none';
+      document.getElementById('authDivider').style.display = 'none';
+      document.getElementById('demoBtn').style.display = 'none';
+      document.getElementById('verifyPending').style.display = 'block';
     } else {
       showError(data.error || 'Error al crear la cuenta');
       btn.disabled = false;

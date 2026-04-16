@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Verificación de cuenta — CISO Toolkit</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="shield">🛡</div>
+      <div>
+        <div class="brand-text">CISO Toolkit</div>
+        <div class="brand-sub">NIST CSF 2.0</div>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="stateLoading" style="text-align:center; padding:1.5rem 0">
+      <div style="font-size:2rem; margin-bottom:.75rem">⏳</div>
+      <p style="color:var(--text-secondary); font-size:.95rem; margin:0">Verificando tu cuenta...</p>
+    </div>
+
+    <!-- Success -->
+    <div id="stateSuccess" style="display:none; text-align:center; padding:1.5rem 0">
+      <div style="font-size:2.5rem; margin-bottom:.75rem">✅</div>
+      <h3 style="margin:0 0 .5rem; font-size:1.1rem">Cuenta verificada</h3>
+      <p style="color:var(--text-secondary); font-size:.9rem; margin:0 0 1.25rem">Tu cuenta está activa. Ya puedes iniciar sesión.</p>
+      <a href="/login.html" class="btn btn-primary btn-login" style="text-decoration:none; display:inline-block">Iniciar sesión</a>
+    </div>
+
+    <!-- Error -->
+    <div id="stateError" style="display:none; text-align:center; padding:1.5rem 0">
+      <div style="font-size:2.5rem; margin-bottom:.75rem">❌</div>
+      <h3 style="margin:0 0 .5rem; font-size:1.1rem">Enlace inválido o expirado</h3>
+      <p style="color:var(--text-secondary); font-size:.9rem; margin:0 0 1.25rem" id="errorMsg"></p>
+      <a href="/login.html" class="btn btn-primary btn-login" style="text-decoration:none; display:inline-block">Volver al inicio</a>
+    </div>
+  </div>
+</div>
+
+<script>
+(async () => {
+  const params = new URLSearchParams(window.location.search);
+  const token  = params.get('token');
+
+  const show = id => ['stateLoading','stateSuccess','stateError'].forEach(s =>
+    document.getElementById(s).style.display = s === id ? 'block' : 'none'
+  );
+
+  if (!token) {
+    document.getElementById('errorMsg').textContent = 'No se encontró un token de verificación en el enlace.';
+    show('stateError');
+    return;
+  }
+
+  try {
+    const res  = await fetch(`/api/auth/verify-email?token=${encodeURIComponent(token)}`);
+    const data = await res.json();
+    if (res.ok) {
+      show('stateSuccess');
+    } else {
+      document.getElementById('errorMsg').textContent = data.error || 'El enlace no es válido.';
+      show('stateError');
+    }
+  } catch {
+    document.getElementById('errorMsg').textContent = 'Error de conexión con el servidor.';
+    show('stateError');
+  }
+})();
+</script>
+</body>
+</html>

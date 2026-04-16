@@ -9,8 +9,32 @@ const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 const path = require('path');
 
+const nodemailer = require('nodemailer');
+const crypto = require('crypto');
+
 const app = express();
 const db = new Database('./kri.db');
+
+const mailer = nodemailer.createTransport({
+  host:   process.env.SMTP_HOST,
+  port:   parseInt(process.env.SMTP_PORT || '587'),
+  secure: process.env.SMTP_PORT === '465',
+  auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+});
+
+const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
+
+function generateToken() { return crypto.randomBytes(32).toString('hex'); }
+
+async function sendVerificationEmail(toEmail, token) {
+  const link = `${BASE_URL}/verify-email.html?token=${token}`;
+  await mailer.sendMail({
+    from:    process.env.SMTP_FROM || process.env.SMTP_USER,
+    to:      toEmail,
+    subject: 'Verifica tu cuenta en CISO Toolkit',
+    html:    `<p>Hola,</p><p>Haz clic en el siguiente enlace para verificar tu cuenta:</p><p><a href="${link}">${link}</a></p><p>Este enlace expirará en 24 horas.</p>`,
+  });
+}
 
 // ─── Database Initialization ──────────────────────────────────────────────────
 
@@ -176,6 +200,33 @@ db.exec(`
       ) WHERE kri_id IS NULL
     `);
     console.log('[M4b] Done.');
+  }
+
+  // M5: add email verification fields to users
+  const userCols = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!userCols.includes('email')) {
+    console.log('[M5] Adding email verification fields to users...');
+    db.exec('ALTER TABLE users ADD COLUMN email TEXT');
+    db.exec('ALTER TABLE users ADD COLUMN email_verified INTEGER DEFAULT 0');
+    db.exec('ALTER TABLE users ADD COLUMN verification_token TEXT');
+    db.exec('ALTER TABLE users ADD COLUMN verification_expires TEXT');
+    console.log('[M5] Done.');
+  }
+
+  // M6: add user_id to kris
+  const kriCols = db.prepare("PRAGMA table_info(kris)").all().map(c => c.name);
+  if (!kriCols.includes('user_id')) {
+    console.log('[M6] Adding user_id to kris...');
+    db.exec('ALTER TABLE kris ADD COLUMN user_id INTEGER REFERENCES users(id)');
+    console.log('[M6] Done.');
+  }
+
+  // M7: add user_id to kri_history
+  const histCols2 = db.prepare("PRAGMA table_info(kri_history)").all().map(c => c.name);
+  if (!histCols2.includes('user_id')) {
+    console.log('[M7] Adding user_id to kri_history...');
+    db.exec('ALTER TABLE kri_history ADD COLUMN user_id INTEGER REFERENCES users(id)');
+    console.log('[M7] Done.');
   }
 })();
 
@@ -893,6 +944,8 @@ passport.use(new LocalStrategy(
     if (!user) return done(null, false, { message: 'Usuario o contraseña incorrectos' });
     if (!bcrypt.compareSync(password, user.password_hash))
       return done(null, false, { message: 'Usuario o contraseña incorrectos' });
+    if (user.email !== null && !user.email_verified)
+      return done(null, false, { message: 'Debes verificar tu email antes de iniciar sesión' });
     return done(null, user);
   }
 ));
@@ -956,31 +1009,57 @@ app.get('/api/auth/me', (req, res) => {
   res.json({ userId: req.user.id, username: req.user.username, role: req.user.role });
 });
 
-app.post('/api/auth/register', (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password)
-    return res.status(400).json({ error: 'Usuario y contraseña requeridos' });
-  if (username.length < 3)
-    return res.status(400).json({ error: 'El usuario debe tener al menos 3 caracteres' });
+app.post('/api/auth/register', async (req, res) => {
+  const { email, password } = req.body;
+  if (!email || !password)
+    return res.status(400).json({ error: 'Email y contraseña requeridos' });
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    return res.status(400).json({ error: 'Email inválido' });
   if (password.length < 8)
     return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
-  if (['demo', 'ciso'].includes(username.toLowerCase()))
-    return res.status(400).json({ error: 'Ese nombre de usuario no está disponible' });
 
-  const existing = db.prepare('SELECT id FROM users WHERE username = ?').get(username);
-  if (existing) return res.status(409).json({ error: 'El usuario ya existe' });
+  const normalizedEmail = email.toLowerCase().trim();
+  const existing = db.prepare('SELECT id FROM users WHERE username = ? OR email = ?').get(normalizedEmail, normalizedEmail);
+  if (existing) return res.status(409).json({ error: 'El email ya está registrado' });
 
-  const hash = bcrypt.hashSync(password, 10);
-  const result = db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(username, hash);
-  const newUser = db.prepare('SELECT id, username, role FROM users WHERE id = ?').get(result.lastInsertRowid);
+  const hash    = bcrypt.hashSync(password, 10);
+  const token   = generateToken();
+  const expires = new Date(Date.now() + 86400000).toISOString();
 
-  req.logIn(newUser, (err) => {
-    if (err) return res.status(500).json({ error: 'Error al iniciar sesión' });
-    req.session.userId   = newUser.id;
-    req.session.username = newUser.username;
-    req.session.role     = newUser.role;
-    res.json({ ok: true, username: newUser.username, role: newUser.role });
-  });
+  let userId;
+  try {
+    const result = db.prepare(
+      'INSERT INTO users (username, password_hash, email, email_verified, verification_token, verification_expires) VALUES (?,?,?,0,?,?)'
+    ).run(normalizedEmail, hash, normalizedEmail, token, expires);
+    userId = result.lastInsertRowid;
+  } catch (e) {
+    return res.status(500).json({ error: 'Error al crear usuario' });
+  }
+
+  try {
+    await sendVerificationEmail(normalizedEmail, token);
+  } catch (e) {
+    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+    return res.status(500).json({ error: 'No se pudo enviar el email de verificación. Comprueba la configuración SMTP.' });
+  }
+
+  res.status(201).json({ ok: true, pending: true });
+});
+
+app.get('/api/auth/verify-email', (req, res) => {
+  const { token } = req.query;
+  if (!token) return res.status(400).json({ error: 'Token requerido' });
+
+  const user = db.prepare('SELECT id, verification_expires FROM users WHERE verification_token = ?').get(token);
+  if (!user) return res.status(400).json({ error: 'Token inválido o ya utilizado' });
+  if (new Date(user.verification_expires) < new Date())
+    return res.status(400).json({ error: 'El enlace ha expirado' });
+
+  db.prepare(
+    'UPDATE users SET email_verified=1, verification_token=NULL, verification_expires=NULL WHERE id=?'
+  ).run(user.id);
+
+  res.json({ ok: true });
 });
 
 app.post('/api/auth/demo', (req, res, next) => {
@@ -1046,13 +1125,14 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
     LEFT JOIN (
       SELECT subcategory_id, AVG(valoracion) AS avg_valoracion
       FROM kris
+      WHERE user_id = ? OR user_id IS NULL
       GROUP BY subcategory_id
     ) avg_k ON avg_k.subcategory_id = s.id
     LEFT JOIN kris latest_k ON latest_k.id = (
-      SELECT id FROM kris WHERE subcategory_id = s.id ORDER BY id DESC LIMIT 1
+      SELECT id FROM kris WHERE subcategory_id = s.id AND (user_id = ? OR user_id IS NULL) ORDER BY id DESC LIMIT 1
     )
     ORDER BY s.code
-  `).all();
+  `).all(req.user.id, req.user.id);
 
   const subsByCat = {};
   subcategories.forEach(s => {
@@ -1094,7 +1174,7 @@ app.get('/api/kris', requireAuth, (req, res) => {
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
-    LEFT JOIN kris k ON k.subcategory_id = s.id
+    LEFT JOIN kris k ON k.subcategory_id = s.id AND (k.user_id = ? OR k.user_id IS NULL)
     LEFT JOIN (
       SELECT kri_id, saved_by, saved_at
       FROM kri_history
@@ -1102,7 +1182,7 @@ app.get('/api/kris', requireAuth, (req, res) => {
     ) h ON h.kri_id = k.id
     WHERE 1=1
   `;
-  const params = [];
+  const params = [req.user.id];
   if (functionId)    { sql += ' AND f.id = ?';  params.push(functionId); }
   if (categoryId)    { sql += ' AND c.id = ?';  params.push(categoryId); }
   if (subcategoryId) { sql += ' AND s.id = ?';  params.push(subcategoryId); }
@@ -1127,8 +1207,8 @@ app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
 
   try {
     if (kri_id) {
-      // UPDATE existing KRI
-      const existing = db.prepare('SELECT id FROM kris WHERE id = ?').get(kri_id);
+      // UPDATE existing KRI — verify ownership
+      const existing = db.prepare('SELECT id FROM kris WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(kri_id, req.user.id);
       if (!existing) return res.status(404).json({ error: 'KRI no encontrado' });
 
       db.prepare(`
@@ -1139,25 +1219,25 @@ app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
              cmmi_flag||null, cmmi_levels||null, v, kri_id);
 
       db.prepare(`
-        INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by)
-        VALUES (?, ?, ?, ?)
-      `).run(subcategoryId, kri_id, v, req.session.username);
+        INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(subcategoryId, kri_id, v, req.session.username, req.user.id);
 
       res.json({ ok: true, kri_id });
     } else {
       // INSERT new KRI
       const result = db.prepare(`
         INSERT INTO kris (subcategory_id, kri_name, kri_description, kri_formula,
-                          cmmi_flag, cmmi_levels, valoracion)
-        VALUES (?,?,?,?,?,?,?)
+                          cmmi_flag, cmmi_levels, valoracion, user_id)
+        VALUES (?,?,?,?,?,?,?,?)
       `).run(subcategoryId, kri_name, kri_description||null, kri_formula||null,
-             cmmi_flag||null, cmmi_levels||null, v);
+             cmmi_flag||null, cmmi_levels||null, v, req.user.id);
 
       const newKriId = result.lastInsertRowid;
       db.prepare(`
-        INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by)
-        VALUES (?, ?, ?, ?)
-      `).run(subcategoryId, newKriId, v, req.session.username);
+        INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id)
+        VALUES (?, ?, ?, ?, ?)
+      `).run(subcategoryId, newKriId, v, req.session.username, req.user.id);
 
       res.json({ ok: true, kri_id: newKriId });
     }
@@ -1171,16 +1251,18 @@ app.get('/api/kris/:kriId/history', requireAuth, (req, res) => {
   const rows = db.prepare(`
     SELECT valoracion, saved_by, saved_at
     FROM kri_history
-    WHERE kri_id = ?
+    WHERE kri_id = ? AND (user_id = ? OR user_id IS NULL)
     ORDER BY saved_at DESC
     LIMIT 50
-  `).all(req.params.kriId);
+  `).all(req.params.kriId, req.user.id);
   res.json(rows);
 });
 
 // DELETE by kri id
 app.delete('/api/kris/:kriId', requireAuth, (req, res) => {
   const { kriId } = req.params;
+  const owned = db.prepare('SELECT id FROM kris WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(kriId, req.user.id);
+  if (!owned) return res.status(403).json({ error: 'No autorizado' });
   try {
     db.prepare('DELETE FROM kri_history WHERE kri_id = ?').run(kriId);
     db.prepare('DELETE FROM kris WHERE id = ?').run(kriId);
@@ -1203,7 +1285,7 @@ app.get('/api/export/excel', requireAuth, (req, res) => {
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
-    LEFT JOIN kris k ON k.subcategory_id = s.id
+    LEFT JOIN kris k ON k.subcategory_id = s.id AND (k.user_id = ? OR k.user_id IS NULL)
     LEFT JOIN (
       SELECT kri_id, saved_by, saved_at
       FROM kri_history
@@ -1211,7 +1293,7 @@ app.get('/api/export/excel', requireAuth, (req, res) => {
     ) h ON h.kri_id = k.id
     WHERE 1=1
   `;
-  const params = [];
+  const params = [req.user.id];
   if (functionId) { sql += ' AND f.id = ?'; params.push(functionId); }
   if (categoryId) { sql += ' AND c.id = ?'; params.push(categoryId); }
   if (kriFilter === 'with')    { sql += ' AND k.id IS NOT NULL'; }

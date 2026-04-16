@@ -203,7 +203,7 @@ async function initTopbar(activePage) {
   if (!user) return;
 
   const el = document.getElementById('topbarUser');
-  if (el) el.textContent = user.username;
+  if (el) el.textContent = user.username.includes('@') ? user.username.split('@')[0] : user.username;
 
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) logoutBtn.addEventListener('click', logout);
