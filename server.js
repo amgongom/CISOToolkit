@@ -16,12 +16,12 @@ const crypto = require('crypto');
 const app = express();
 const db = new Database('./kri.db');
 
-const mailer = nodemailer.createTransport({
+const mailer = process.env.SMTP_HOST ? nodemailer.createTransport({
   host:   process.env.SMTP_HOST,
   port:   parseInt(process.env.SMTP_PORT || '587'),
   secure: process.env.SMTP_PORT === '465',
   auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-});
+}) : null;
 
 const BASE_URL = process.env.BASE_URL || 'http://localhost:3000';
 
@@ -29,6 +29,10 @@ function generateToken() { return crypto.randomBytes(32).toString('hex'); }
 
 async function sendVerificationEmail(toEmail, token) {
   const link = `${BASE_URL}/verify-email.html?token=${token}`;
+  if (!mailer) {
+    console.log(`[DEV] Verificación para ${toEmail}: ${link}`);
+    return;
+  }
   await mailer.sendMail({
     from:    process.env.SMTP_FROM || process.env.SMTP_USER,
     to:      toEmail,
@@ -1040,8 +1044,9 @@ app.post('/api/auth/register', async (req, res) => {
   try {
     await sendVerificationEmail(normalizedEmail, token);
   } catch (e) {
+    console.error('[SMTP error]', e.message);
     db.prepare('DELETE FROM users WHERE id = ?').run(userId);
-    return res.status(500).json({ error: 'No se pudo enviar el email de verificación. Comprueba la configuración SMTP.' });
+    return res.status(500).json({ error: `No se pudo enviar el email de verificación: ${e.message}` });
   }
 
   res.status(201).json({ ok: true, pending: true });
