@@ -9,6 +9,12 @@ const LocalStrategy = require('passport-local').Strategy;
 const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 const path = require('path');
+const { execSync } = require('child_process');
+
+const APP_VERSION = (() => {
+  try { return execSync('git describe --tags --abbrev=0', { stdio: ['ignore','pipe','ignore'] }).toString().trim(); }
+  catch { return 'dev'; }
+})();
 
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
@@ -1419,6 +1425,8 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
   db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
   res.json({ ok: true });
 });
+
+app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 
 // ─── Redirect root ────────────────────────────────────────────────────────────
 

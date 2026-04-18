@@ -42,6 +42,7 @@
         <div class="page-header-framework">Panel de Control</div>
         <div class="page-header-title">Gestión de Usuarios</div>
       </div>
+      <div style="margin-left:auto;align-self:center;font-size:.78rem;color:var(--text-muted)" id="appVersion"></div>
     </div>
 
     <div class="card">
@@ -94,6 +95,11 @@
     window.location.href = '/heatmap.html';
     return;
   }
+
+  fetch('/api/version').then(r => r.json()).then(d => {
+    const el = document.getElementById('appVersion');
+    if (el) el.textContent = d.version;
+  });
 
   await loadUsers();
 })();
