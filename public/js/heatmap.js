@@ -120,10 +120,6 @@ function updateHUD() {
   animateCounter('stat-withkri', withKri);
   animateCounter('stat-n1',      n1);
 
-  if (vals.length) {
-    const avg = vals.reduce((a, b) => a + b, 0) / vals.length;
-    animateCounter('stat-avg', avg, 1000, 1);
-  }
 }
 
 function animateCounter(elId, target, duration = 900, decimals = 0) {
