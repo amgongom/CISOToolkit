@@ -1428,6 +1428,56 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
 
 app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 
+// ─── Scenario Routes ──────────────────────────────────────────────────────────
+
+app.post('/api/scenarios/apply', requireAuth, (req, res) => {
+  const { scenario } = req.body;
+  const valid = ['empty', 'positive', 'neutral', 'negative', 'scratch'];
+  if (!valid.includes(scenario))
+    return res.status(400).json({ error: 'Escenario inválido' });
+
+  const userId = req.session.userId;
+
+  // Delete existing KRIs and history for this user
+  const userKriIds = db.prepare('SELECT id FROM kris WHERE user_id = ?').all(userId).map(r => r.id);
+  if (userKriIds.length) {
+    const placeholders = userKriIds.map(() => '?').join(',');
+    db.prepare(`DELETE FROM kri_history WHERE kri_id IN (${placeholders})`).run(...userKriIds);
+    db.prepare('DELETE FROM kris WHERE user_id = ?').run(userId);
+  }
+
+  if (scenario === 'empty' || scenario === 'scratch') {
+    return res.json({ ok: true, created: 0 });
+  }
+
+  const ranges = {
+    positive: { min: 70, max: 95, flag: 'POSITIVO' },
+    neutral:  { min: 40, max: 65, flag: 'POSITIVO' },
+    negative: { min:  5, max: 30, flag: 'NEGATIVO' },
+  };
+  const { min, max, flag } = ranges[scenario];
+  const label = { positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
+
+  const subcategories = db.prepare('SELECT id FROM subcategories').all();
+  const insKri = db.prepare(
+    'INSERT INTO kris (subcategory_id, kri_name, cmmi_flag, valoracion, user_id) VALUES (?, ?, ?, ?, ?)'
+  );
+  const insHist = db.prepare(
+    'INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id) VALUES (?, ?, ?, ?, ?)'
+  );
+
+  const insertAll = db.transaction(() => {
+    for (const sub of subcategories) {
+      const val = Math.round(min + Math.random() * (max - min));
+      const info = insKri.run(sub.id, `KRI — Simulación ${label}`, flag, val, userId);
+      insHist.run(sub.id, info.lastInsertRowid, val, req.session.username, userId);
+    }
+  });
+  insertAll();
+
+  res.json({ ok: true, created: subcategories.length });
+});
+
 // ─── Redirect root ────────────────────────────────────────────────────────────
 
 app.get('/', (req, res) => {

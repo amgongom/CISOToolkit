@@ -782,9 +782,38 @@ async function exportHeatmap() {
 }
 
 // ── UI bindings ───────────────────────────────────────────────────────────────
+async function applyScenario() {
+  const select = document.getElementById('scenarioSelect');
+  const scenario = select?.value;
+  if (!scenario) return;
+  const labels = { empty: 'Simulación random', positive: 'Simulación positiva', neutral: 'Simulación neutral', negative: 'Simulación negativa', scratch: 'Crear desde cero' };
+  if (!confirm(`¿Reemplazar todos tus KRIs con el escenario "${labels[scenario]}"?\nEsta acción no se puede deshacer.`)) return;
+  const btn = document.getElementById('applyScenarioBtn');
+  if (btn) btn.disabled = true;
+  try {
+    const res = await fetch('/api/scenarios/apply', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ scenario })
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error || 'Error al aplicar escenario', 'error'); return; }
+    toast(`Escenario "${labels[scenario]}" aplicado (${data.created ?? 0} KRIs)`);
+    if (select) select.value = '';
+    await loadData();
+  } catch (e) {
+    toast('Error de conexión', 'error');
+  } finally {
+    if (btn) btn.disabled = false;
+  }
+}
+
 function bindUI() {
   // KRI panel close
   document.getElementById('kp-close')?.addEventListener('click', closeKriPanel);
+
+  // Scenario selector
+  document.getElementById('applyScenarioBtn')?.addEventListener('click', applyScenario);
 
   // Export button
   document.getElementById('btnExport')?.addEventListener('click', exportHeatmap);
