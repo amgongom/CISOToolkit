@@ -2,3 +2,4 @@ node_modules/
 kri.db
 *.db-shm
 *.db-wal
+.env

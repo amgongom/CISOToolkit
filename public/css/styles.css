@@ -839,6 +839,33 @@ tbody td {
 .btn-danger { background: var(--red); color: white; }
 .btn-danger:hover { opacity: .85; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-sm { padding: .25rem .6rem; font-size: .75rem; }
+
+/* ── Role badges ──────────────────────────────────────────────────────────── */
+.role-badge {
+  display: inline-block;
+  padding: .15rem .5rem;
+  border-radius: 4px;
+  font-size: .72rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.role-admin  { background: rgba(77,159,255,.18); color: var(--accent); }
+.role-ciso   { background: rgba(255,255,255,.07); color: var(--text-secondary); }
+.role-demo   { background: rgba(255,200,0,.12); color: #f5c842; }
+
+/* ── Admin dialog ─────────────────────────────────────────────────────────── */
+.admin-dialog {
+  background: var(--bg-card);
+  border: 1px solid var(--border-soft);
+  border-radius: 10px;
+  padding: 1.75rem;
+  min-width: 340px;
+  color: var(--text-primary);
+}
+.admin-dialog::backdrop { background: rgba(0,0,0,.55); }
+.dialog-title { margin: 0 0 .5rem; font-size: 1rem; font-weight: 600; }
 
 /* ── Toast ──────────────────────────────────────────────────────────────────── */
 .toast-container {

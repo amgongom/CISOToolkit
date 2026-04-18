@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin — CISOToolkit</title>
+  <link rel="stylesheet" href="/css/styles.css">
+</head>
+<body>
+<div class="app-container">
+
+  <!-- Topbar -->
+  <header class="topbar">
+    <a class="brand" href="/heatmap.html">
+      <div class="brand-mark">🛡</div>
+      <span>CISOToolkit</span>
+    </a>
+    <div class="topbar-divider"></div>
+    <nav class="topbar-nav">
+      <a href="/heatmap.html">Heatmap</a>
+      <a href="/data.html">Key Risk Indicators</a>
+      <a href="/admin.html" class="active">Admin</a>
+    </nav>
+    <div class="topbar-spacer"></div>
+    <div class="topbar-right">
+      <div class="live-badge">
+        <div class="live-dot"></div>
+        LIVE
+      </div>
+      <div class="topbar-user">
+        <div class="avatar">👤</div>
+        <span id="topbarUser" style="font-size:.78rem"></span>
+        <button class="btn-logout" id="logoutBtn">Salir</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main -->
+  <main class="main">
+    <div class="page-header">
+      <div class="page-header-text">
+        <div class="page-header-framework">Panel de Control</div>
+        <div class="page-header-title">Gestión de Usuarios</div>
+      </div>
+    </div>
+
+    <div class="card">
+      <table class="kri-table" id="usersTable">
+        <thead>
+          <tr>
+            <th>ID</th>
+            <th>Usuario</th>
+            <th>Rol</th>
+            <th>Email</th>
+            <th>Verificado</th>
+            <th>Creado</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="usersBody">
+          <tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- Modal: cambiar contraseña -->
+<dialog id="pwdDialog" class="admin-dialog">
+  <form id="pwdForm" method="dialog">
+    <h3 class="dialog-title">Cambiar contraseña</h3>
+    <p id="pwdUserLabel" style="color:var(--text-muted);margin-bottom:1rem;font-size:.85rem"></p>
+    <div class="filter-group" style="margin-bottom:.75rem">
+      <label>Nueva contraseña</label>
+      <input type="password" id="pwdNew" placeholder="Mínimo 8 caracteres" autocomplete="new-password">
+    </div>
+    <div class="filter-group" style="margin-bottom:1.25rem">
+      <label>Confirmar contraseña</label>
+      <input type="password" id="pwdConfirm" placeholder="Repite la contraseña" autocomplete="new-password">
+    </div>
+    <div style="display:flex;gap:.75rem;justify-content:flex-end">
+      <button type="button" class="btn-secondary" id="pwdCancel">Cancelar</button>
+      <button type="button" class="btn-primary" id="pwdSave">Guardar</button>
+    </div>
+  </form>
+</dialog>
+
+<script src="/js/common.js"></script>
+<script>
+(async () => {
+  await initTopbar('admin');
+
+  if (window._userRole !== 'ADMIN') {
+    window.location.href = '/heatmap.html';
+    return;
+  }
+
+  await loadUsers();
+})();
+
+async function loadUsers() {
+  const res = await fetch('/api/admin/users');
+  if (!res.ok) { toast('Error al cargar usuarios', 'error'); return; }
+  const users = await res.json();
+  renderUsers(users);
+}
+
+function renderUsers(users) {
+  const tbody = document.getElementById('usersBody');
+  if (!users.length) {
+    tbody.innerHTML = '<tr><td colspan="7" style="text-align:center;color:var(--text-muted)">Sin usuarios</td></tr>';
+    return;
+  }
+  tbody.innerHTML = users.map(u => `
+    <tr>
+      <td>${u.id}</td>
+      <td><strong>${esc(u.username)}</strong></td>
+      <td><span class="role-badge role-${u.role.toLowerCase()}">${esc(u.role)}</span></td>
+      <td>${u.email ? esc(u.email) : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td>${u.email_verified ? '<span style="color:var(--n5-color)">✓</span>' : '<span style="color:var(--text-muted)">—</span>'}</td>
+      <td style="font-size:.78rem;color:var(--text-muted)">${u.created_at ? u.created_at.slice(0,16) : '—'}</td>
+      <td>
+        <button class="btn-secondary btn-sm" onclick="openPwdDialog(${u.id}, '${esc(u.username)}')">Contraseña</button>
+        <button class="btn-danger btn-sm" onclick="deleteUser(${u.id}, '${esc(u.username)}')">Eliminar</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function esc(s) {
+  return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+let _pwdUserId = null;
+
+function openPwdDialog(id, username) {
+  _pwdUserId = id;
+  document.getElementById('pwdUserLabel').textContent = `Usuario: ${username}`;
+  document.getElementById('pwdNew').value = '';
+  document.getElementById('pwdConfirm').value = '';
+  document.getElementById('pwdDialog').showModal();
+}
+
+document.getElementById('pwdCancel').addEventListener('click', () => {
+  document.getElementById('pwdDialog').close();
+});
+
+document.getElementById('pwdSave').addEventListener('click', async () => {
+  const pwd = document.getElementById('pwdNew').value;
+  const confirm = document.getElementById('pwdConfirm').value;
+  if (pwd.length < 8) { toast('Mínimo 8 caracteres', 'error'); return; }
+  if (pwd !== confirm) { toast('Las contraseñas no coinciden', 'error'); return; }
+
+  const res = await fetch(`/api/admin/users/${_pwdUserId}/password`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password: pwd })
+  });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error || 'Error al cambiar contraseña', 'error'); return; }
+
+  document.getElementById('pwdDialog').close();
+  toast('Contraseña actualizada');
+});
+
+async function deleteUser(id, username) {
+  if (!confirm(`¿Eliminar el usuario "${username}"? Esta acción no se puede deshacer.`)) return;
+
+  const res = await fetch(`/api/admin/users/${id}`, { method: 'DELETE' });
+  const data = await res.json();
+  if (!res.ok) { toast(data.error || 'Error al eliminar usuario', 'error'); return; }
+
+  toast(`Usuario "${username}" eliminado`);
+  await loadUsers();
+}
+</script>
+</body>
+</html>

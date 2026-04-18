@@ -202,6 +202,8 @@ async function initTopbar(activePage) {
   const user = await checkAuth();
   if (!user) return;
 
+  window._userRole = user.role;
+
   const el = document.getElementById('topbarUser');
   if (el) el.textContent = user.username.includes('@') ? user.username.split('@')[0] : user.username;
 
@@ -211,4 +213,7 @@ async function initTopbar(activePage) {
   document.querySelectorAll('.topbar-nav a').forEach(a => {
     a.classList.toggle('active', a.dataset.page === activePage);
   });
+
+  const adminLink = document.getElementById('adminLink');
+  if (adminLink && user.role === 'ADMIN') adminLink.style.display = '';
 }

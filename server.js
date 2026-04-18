@@ -233,6 +233,14 @@ db.exec(`
     db.exec('ALTER TABLE kri_history ADD COLUMN user_id INTEGER REFERENCES users(id)');
     console.log('[M7] Done.');
   }
+
+  // M8: Upgrade default ciso user to ADMIN role
+  const cisoUser = db.prepare("SELECT role FROM users WHERE username='ciso'").get();
+  if (cisoUser && cisoUser.role !== 'ADMIN') {
+    console.log('[M8] Upgrading ciso user to ADMIN role...');
+    db.prepare("UPDATE users SET role='ADMIN' WHERE username='ciso'").run();
+    console.log('[M8] Done.');
+  }
 })();
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
@@ -981,6 +989,11 @@ function requireAuth(req, res, next) {
   res.status(401).json({ error: 'No autenticado' });
 }
 
+function requireAdmin(req, res, next) {
+  if (req.isAuthenticated() && req.session.role === 'ADMIN') return next();
+  res.status(403).json({ error: 'Acceso denegado' });
+}
+
 // ─── Auth Routes ──────────────────────────────────────────────────────────────
 
 app.post('/api/auth/login', (req, res, next) => {
@@ -1376,6 +1389,35 @@ app.get('/api/export/excel', requireAuth, (req, res) => {
   res.setHeader('Content-Disposition', `attachment; filename="kri_export_${today}.xlsx"`);
   res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
   res.send(buf);
+});
+
+// ─── Admin Routes ─────────────────────────────────────────────────────────────
+
+app.get('/api/admin/users', requireAdmin, (req, res) => {
+  const users = db.prepare(
+    'SELECT id, username, role, email, email_verified, created_at FROM users ORDER BY id ASC'
+  ).all();
+  res.json(users);
+});
+
+app.put('/api/admin/users/:id/password', requireAdmin, async (req, res) => {
+  const { password } = req.body;
+  if (!password || password.length < 8)
+    return res.status(400).json({ error: 'La contraseña debe tener al menos 8 caracteres' });
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  const hash = await bcrypt.hash(password, 10);
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(hash, req.params.id);
+  res.json({ ok: true });
+});
+
+app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
+  if (Number(req.params.id) === req.session.userId)
+    return res.status(400).json({ error: 'No puedes eliminar tu propia cuenta' });
+  const user = db.prepare('SELECT id FROM users WHERE id = ?').get(req.params.id);
+  if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+  db.prepare('DELETE FROM users WHERE id = ?').run(req.params.id);
+  res.json({ ok: true });
 });
 
 // ─── Redirect root ────────────────────────────────────────────────────────────
