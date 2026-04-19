@@ -268,6 +268,14 @@ db.exec(`
     db.exec('ALTER TABLE users ADD COLUMN scratch_mode INTEGER DEFAULT 0');
     console.log('[M9] Done.');
   }
+
+  // M11: add heatmap_name to users
+  const userCols11 = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!userCols11.includes('heatmap_name')) {
+    console.log('[M11] Adding heatmap_name to users...');
+    db.exec('ALTER TABLE users ADD COLUMN heatmap_name TEXT');
+    console.log('[M11] Done.');
+  }
 })();
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
@@ -1051,7 +1059,7 @@ app.post('/api/auth/logout', (req, res, next) => {
 
 app.get('/api/auth/me', (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).json({ error: 'No autenticado' });
-  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role, scratch_mode: req.user.scratch_mode || 0 });
+  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role, scratch_mode: req.user.scratch_mode || 0, heatmap_name: req.user.heatmap_name || null });
 });
 
 app.post('/api/auth/register', async (req, res) => {
@@ -1504,8 +1512,9 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
   }
 
   if (scenario === 'scratch') {
-    db.prepare('UPDATE users SET scratch_mode=1 WHERE id=?').run(userId);
-    return res.json({ ok: true, created: 0 });
+    const hmName = (req.body.heatmap_name || '').trim().slice(0, 80) || null;
+    db.prepare('UPDATE users SET scratch_mode=1, heatmap_name=? WHERE id=?').run(hmName, userId);
+    return res.json({ ok: true, created: 0, heatmap_name: hmName });
   }
 
   if (!SCENARIO_TEMPLATES) buildScenarioTemplates();

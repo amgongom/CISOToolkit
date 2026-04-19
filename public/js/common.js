@@ -204,6 +204,7 @@ async function initTopbar(activePage) {
 
   window._userRole    = user.role;
   window._scratchMode = user.scratch_mode === 1;
+  window._heatmapName = user.heatmap_name || null;
 
   const el = document.getElementById('topbarUser');
   if (el) el.textContent = user.username.includes('@') ? user.username.split('@')[0] : user.username;
