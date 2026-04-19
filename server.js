@@ -12,7 +12,7 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 
-const APP_VERSION = 'Code v5.7, DB 1.0';
+const APP_VERSION = 'v6.4 DB 1.0';
 
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
