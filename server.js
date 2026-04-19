@@ -248,6 +248,19 @@ db.exec(`
     console.log('[M8] Done.');
   }
 
+  // M10: delete orphan KRIs with user_id IS NULL (seed data, no longer used)
+  const nullKriCount = db.prepare('SELECT COUNT(*) as c FROM kris WHERE user_id IS NULL').get().c;
+  if (nullKriCount > 0) {
+    console.log(`[M10] Deleting ${nullKriCount} orphan KRIs (user_id IS NULL)...`);
+    const nullIds = db.prepare('SELECT id FROM kris WHERE user_id IS NULL').all().map(r => r.id);
+    if (nullIds.length) {
+      const ph = nullIds.map(() => '?').join(',');
+      db.prepare(`DELETE FROM kri_history WHERE kri_id IN (${ph})`).run(...nullIds);
+    }
+    db.prepare('DELETE FROM kris WHERE user_id IS NULL').run();
+    console.log('[M10] Done.');
+  }
+
   // M9: add scratch_mode to users
   const userCols9 = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
   if (!userCols9.includes('scratch_mode')) {
@@ -1145,9 +1158,6 @@ app.get('/api/examples', requireAuth, (req, res) => {
 app.get('/api/heatmap', requireAuth, (req, res) => {
   const functions    = db.prepare('SELECT * FROM functions ORDER BY code').all();
   const categories   = db.prepare('SELECT * FROM categories ORDER BY code').all();
-  const userRow      = db.prepare('SELECT scratch_mode FROM users WHERE id = ?').get(req.user.id);
-  const scratchMode  = userRow && userRow.scratch_mode === 1;
-  const kriFilter    = scratchMode ? 'user_id = ?' : '(user_id = ? OR user_id IS NULL)';
   const subcategories = db.prepare(`
     SELECT s.*,
            avg_k.avg_valoracion  AS valoracion,
@@ -1161,11 +1171,11 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
     LEFT JOIN (
       SELECT subcategory_id, AVG(valoracion) AS avg_valoracion
       FROM kris
-      WHERE ${kriFilter}
+      WHERE user_id = ?
       GROUP BY subcategory_id
     ) avg_k ON avg_k.subcategory_id = s.id
     LEFT JOIN kris latest_k ON latest_k.id = (
-      SELECT id FROM kris WHERE subcategory_id = s.id AND ${kriFilter} ORDER BY id DESC LIMIT 1
+      SELECT id FROM kris WHERE subcategory_id = s.id AND user_id = ? ORDER BY id DESC LIMIT 1
     )
     ORDER BY s.code
   `).all(req.user.id, req.user.id);
@@ -1210,7 +1220,7 @@ app.get('/api/kris', requireAuth, (req, res) => {
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
-    LEFT JOIN kris k ON k.subcategory_id = s.id AND (k.user_id = ? OR k.user_id IS NULL)
+    LEFT JOIN kris k ON k.subcategory_id = s.id AND k.user_id = ?
     LEFT JOIN (
       SELECT kri_id, saved_by, saved_at
       FROM kri_history
@@ -1244,7 +1254,7 @@ app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
   try {
     if (kri_id) {
       // UPDATE existing KRI — verify ownership
-      const existing = db.prepare('SELECT id FROM kris WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(kri_id, req.user.id);
+      const existing = db.prepare('SELECT id FROM kris WHERE id = ? AND user_id = ?').get(kri_id, req.user.id);
       if (!existing) return res.status(404).json({ error: 'KRI no encontrado' });
 
       db.prepare(`
@@ -1289,7 +1299,7 @@ app.get('/api/kris/:kriId/history', requireAuth, (req, res) => {
   const rows = db.prepare(`
     SELECT valoracion, saved_by, saved_at
     FROM kri_history
-    WHERE kri_id = ? AND (user_id = ? OR user_id IS NULL)
+    WHERE kri_id = ? AND user_id = ?
     ORDER BY saved_at DESC
     LIMIT 50
   `).all(req.params.kriId, req.user.id);
@@ -1299,7 +1309,7 @@ app.get('/api/kris/:kriId/history', requireAuth, (req, res) => {
 // DELETE by kri id
 app.delete('/api/kris/:kriId', requireAuth, (req, res) => {
   const { kriId } = req.params;
-  const owned = db.prepare('SELECT id FROM kris WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(kriId, req.user.id);
+  const owned = db.prepare('SELECT id FROM kris WHERE id = ? AND user_id = ?').get(kriId, req.user.id);
   if (!owned) return res.status(403).json({ error: 'No autorizado' });
   try {
     db.prepare('DELETE FROM kri_history WHERE kri_id = ?').run(kriId);
@@ -1323,7 +1333,7 @@ app.get('/api/export/excel', requireAuth, (req, res) => {
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
-    LEFT JOIN kris k ON k.subcategory_id = s.id AND (k.user_id = ? OR k.user_id IS NULL)
+    LEFT JOIN kris k ON k.subcategory_id = s.id AND k.user_id = ?
     LEFT JOIN (
       SELECT kri_id, saved_by, saved_at
       FROM kri_history
