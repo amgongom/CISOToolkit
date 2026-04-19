@@ -693,6 +693,7 @@ async function saveKri() {
   if (!name) { toast('El nombre del KRI es obligatorio', 'error'); return; }
   if (isNaN(val) || val < 0 || val > 100) { toast('Valoración debe estar entre 0 y 100', 'error'); return; }
 
+  const subId = STATE.editSubId;
   const body = {
     kri_id:          STATE.editKriId || undefined,
     kri_name:        name,
@@ -705,7 +706,7 @@ async function saveKri() {
   const btn = document.getElementById('hm-btn-save');
   btn.disabled = true;
   try {
-    const res = await fetch(`/api/kris/${STATE.editSubId}`, {
+    const res = await fetch(`/api/kris/${subId}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -719,6 +720,8 @@ async function saveKri() {
     toast('KRI guardado');
     closeEditModal();
     await loadData();
+    const sub = STATE.subById[subId];
+    if (sub) await openKriPanel(sub);
   } catch (e) {
     toast(e.message || 'Error al guardar', 'error');
   } finally { btn.disabled = false; }
@@ -726,12 +729,15 @@ async function saveKri() {
 
 async function deleteKri() {
   if (!confirm('¿Eliminar este KRI?')) return;
+  const subId = STATE.editSubId;
   try {
     const res = await fetch(`/api/kris/${STATE.editKriId}`, { method: 'DELETE' });
     if (!res.ok) throw new Error((await res.json()).error);
     toast('KRI eliminado');
     closeEditModal();
     await loadData();
+    const sub = STATE.subById[subId];
+    if (sub) await openKriPanel(sub);
   } catch {
     toast('Error al eliminar', 'error');
   }
