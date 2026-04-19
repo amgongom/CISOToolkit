@@ -1628,6 +1628,18 @@ tbody td {
 }
 #hm-kri-modal.hidden { display: none; }
 
+#hm-name-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+  z-index: 100;
+}
+#hm-name-modal:not(.hidden) { display: flex; }
+
 .hm-modal-box {
   background: linear-gradient(170deg, var(--bg-elevated) 0%, var(--bg-surface) 100%);
   border: 1px solid var(--border-mid);
