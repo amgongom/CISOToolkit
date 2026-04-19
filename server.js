@@ -247,6 +247,14 @@ db.exec(`
     db.prepare("UPDATE users SET role='ADMIN' WHERE username='ciso'").run();
     console.log('[M8] Done.');
   }
+
+  // M9: add scratch_mode to users
+  const userCols9 = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!userCols9.includes('scratch_mode')) {
+    console.log('[M9] Adding scratch_mode to users...');
+    db.exec('ALTER TABLE users ADD COLUMN scratch_mode INTEGER DEFAULT 0');
+    console.log('[M9] Done.');
+  }
 })();
 
 // ─── Seed Data ────────────────────────────────────────────────────────────────
@@ -1137,6 +1145,9 @@ app.get('/api/examples', requireAuth, (req, res) => {
 app.get('/api/heatmap', requireAuth, (req, res) => {
   const functions    = db.prepare('SELECT * FROM functions ORDER BY code').all();
   const categories   = db.prepare('SELECT * FROM categories ORDER BY code').all();
+  const userRow      = db.prepare('SELECT scratch_mode FROM users WHERE id = ?').get(req.user.id);
+  const scratchMode  = userRow && userRow.scratch_mode === 1;
+  const kriFilter    = scratchMode ? 'user_id = ?' : '(user_id = ? OR user_id IS NULL)';
   const subcategories = db.prepare(`
     SELECT s.*,
            avg_k.avg_valoracion  AS valoracion,
@@ -1150,11 +1161,11 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
     LEFT JOIN (
       SELECT subcategory_id, AVG(valoracion) AS avg_valoracion
       FROM kris
-      WHERE user_id = ? OR user_id IS NULL
+      WHERE ${kriFilter}
       GROUP BY subcategory_id
     ) avg_k ON avg_k.subcategory_id = s.id
     LEFT JOIN kris latest_k ON latest_k.id = (
-      SELECT id FROM kris WHERE subcategory_id = s.id AND (user_id = ? OR user_id IS NULL) ORDER BY id DESC LIMIT 1
+      SELECT id FROM kris WHERE subcategory_id = s.id AND ${kriFilter} ORDER BY id DESC LIMIT 1
     )
     ORDER BY s.code
   `).all(req.user.id, req.user.id);
@@ -1263,6 +1274,8 @@ app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
         INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id)
         VALUES (?, ?, ?, ?, ?)
       `).run(subcategoryId, newKriId, v, req.session.username, req.user.id);
+
+      db.prepare('UPDATE users SET scratch_mode=0 WHERE id=?').run(req.user.id);
 
       res.json({ ok: true, kri_id: newKriId });
     }
@@ -1446,17 +1459,21 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
     db.prepare('DELETE FROM kris WHERE user_id = ?').run(userId);
   }
 
-  if (scenario === 'empty' || scenario === 'scratch') {
+  if (scenario === 'scratch') {
+    db.prepare('UPDATE users SET scratch_mode=1 WHERE id=?').run(userId);
     return res.json({ ok: true, created: 0 });
   }
 
+  db.prepare('UPDATE users SET scratch_mode=0 WHERE id=?').run(userId);
+
   const ranges = {
-    positive: { min: 70, max: 95, flag: 'POSITIVO' },
-    neutral:  { min: 40, max: 65, flag: 'POSITIVO' },
-    negative: { min:  5, max: 30, flag: 'NEGATIVO' },
+    empty:    { min:  0, max: 100, flag: null },
+    positive: { min: 70, max: 95,  flag: 'POSITIVO' },
+    neutral:  { min: 40, max: 65,  flag: 'POSITIVO' },
+    negative: { min:  5, max: 30,  flag: 'NEGATIVO' },
   };
   const { min, max, flag } = ranges[scenario];
-  const label = { positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
+  const label = { empty: 'random', positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
 
   const subcategories = db.prepare('SELECT id FROM subcategories').all();
   const insKri = db.prepare(
@@ -1466,10 +1483,12 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
     'INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id) VALUES (?, ?, ?, ?, ?)'
   );
 
+  const flags = ['POSITIVO', 'NEGATIVO'];
   const insertAll = db.transaction(() => {
     for (const sub of subcategories) {
       const val = Math.round(min + Math.random() * (max - min));
-      const info = insKri.run(sub.id, `KRI — Simulación ${label}`, flag, val, userId);
+      const f = flag ?? flags[Math.floor(Math.random() * 2)];
+      const info = insKri.run(sub.id, `KRI — Simulación ${label}`, f, val, userId);
       insHist.run(sub.id, info.lastInsertRowid, val, req.session.username, userId);
     }
   });

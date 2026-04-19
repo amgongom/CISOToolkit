@@ -41,8 +41,8 @@ const STATE = {
 // ── Boot ──────────────────────────────────────────────────────────────────────
 (async () => {
   await initTopbar('heatmap');
-  await loadData();
   bindUI();
+  await applyScenario('empty');
 })();
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -782,12 +782,11 @@ async function exportHeatmap() {
 }
 
 // ── UI bindings ───────────────────────────────────────────────────────────────
-async function applyScenario() {
+async function applyScenario(autoScenario) {
   const select = document.getElementById('scenarioSelect');
-  const scenario = select?.value;
+  const scenario = autoScenario ?? select?.value;
   if (!scenario) return;
   const labels = { empty: 'Simulación random', positive: 'Simulación positiva', neutral: 'Simulación neutral', negative: 'Simulación negativa', scratch: 'Crear desde cero' };
-  if (!confirm(`¿Reemplazar todos tus KRIs con el escenario "${labels[scenario]}"?\nEsta acción no se puede deshacer.`)) return;
   const btn = document.getElementById('applyScenarioBtn');
   if (btn) btn.disabled = true;
   try {
@@ -798,8 +797,8 @@ async function applyScenario() {
     });
     const data = await res.json();
     if (!res.ok) { toast(data.error || 'Error al aplicar escenario', 'error'); return; }
-    toast(`Escenario "${labels[scenario]}" aplicado (${data.created ?? 0} KRIs)`);
-    if (select) select.value = '';
+    if (!autoScenario) toast(`Escenario "${labels[scenario]}" aplicado (${data.created ?? 0} KRIs)`);
+    if (select && !autoScenario) select.value = '';
     await loadData();
   } catch (e) {
     toast('Error de conexión', 'error');
