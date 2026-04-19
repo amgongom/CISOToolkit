@@ -35,9 +35,46 @@
       "Bash(sed -i 's|/pilot-dark\\\\.html|/heatmap.html|g' public/data.html public/pilot-dark.html public/heatmap.html)",
       "Bash(cp public/pilot-dark.html public/heatmap.html)",
       "Bash(rm public/pilot-dark.html)",
-      "Bash(ls public/*.html)"
+      "Bash(ls public/*.html)",
+      "Bash(grep -E \"\\\\.\\(html|js|css\\)$|^d\")",
+      "Bash(grep -E \"\\\\.\\(html|js|css\\)$\")",
+      "Bash(curl -s http://localhost:3000/heatmap.html)",
+      "Bash(curl -s http://localhost:3000/js/heatmap.js)",
+      "Bash(curl -s -c /tmp/cookies.txt -b /tmp/cookies.txt -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"ciso\",\"password\":\"Admin1234!\"}')",
+      "Bash(curl -s -c /tmp/cookies.txt -b /tmp/cookies.txt http://localhost:3000/api/heatmap)",
+      "Bash(curl -s http://localhost:3000/data.html)",
+      "Bash(curl -s http://localhost:3000/css/styles.css)",
+      "Bash(node:*)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"ciso\",\"password\":\"Admin1234!\"}')",
+      "Bash(kill %1)",
+      "Skill(keybindings-help)",
+      "Bash(curl -s -X POST http://localhost:3000/api/auth/demo -H \"Content-Type: application/json\")",
+      "Bash(curl *)",
+      "Bash(sqlite3 *)",
+      "Bash(grep -E \"\\\\.js$|\\\\.html$|\\\\.json$|^d\")",
+      "Bash(ssh root@cisotoolkit.org \"fuser 3000/tcp 2>&1; lsof -i :3000 2>&1\")",
+      "Skill(update-config)",
+      "Bash(node -e ' *)",
+      "Bash(echo \"Done — $\\(node -e \"console.log\\(Object.keys\\(require\\('./scenario-random-template.json'\\)\\).length\\)\"\\) subcats\")",
+      "Bash(git checkout *)",
+      "Bash(git commit *)",
+      "Bash(git restore *)",
+      "Bash(scp *)"
     ]
   },
   "spinnerTipsEnabled": true,
-  "prefersReducedMotion": false
+  "prefersReducedMotion": false,
+  "hooks": {
+    "Notification": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -Command \"[System.Media.SystemSounds]::Asterisk.Play()\""
+          }
+        ]
+      }
+    ]
+  }
 }

@@ -9,12 +9,10 @@ const LocalStrategy = require('passport-local').Strategy;
 const Database = require('better-sqlite3');
 const XLSX = require('xlsx');
 const path = require('path');
+const fs = require('fs');
 const { execSync } = require('child_process');
 
-const APP_VERSION = (() => {
-  try { return execSync('git describe --tags --abbrev=0', { stdio: ['ignore','pipe','ignore'] }).toString().trim(); }
-  catch { return 'dev'; }
-})();
+const APP_VERSION = 'Code v5.7, DB 1.0';
 
 const nodemailer = require('nodemailer');
 const crypto = require('crypto');
@@ -254,6 +252,14 @@ db.exec(`
     console.log('[M9] Adding scratch_mode to users...');
     db.exec('ALTER TABLE users ADD COLUMN scratch_mode INTEGER DEFAULT 0');
     console.log('[M9] Done.');
+  }
+
+  // M10: add heatmap_name to users
+  const userCols10 = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
+  if (!userCols10.includes('heatmap_name')) {
+    console.log('[M10] Adding heatmap_name to users...');
+    db.exec('ALTER TABLE users ADD COLUMN heatmap_name TEXT DEFAULT NULL');
+    console.log('[M10] Done.');
   }
 })();
 
@@ -1038,7 +1044,14 @@ app.post('/api/auth/logout', (req, res, next) => {
 
 app.get('/api/auth/me', (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).json({ error: 'No autenticado' });
-  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role });
+  const userState = db.prepare('SELECT scratch_mode, heatmap_name FROM users WHERE id=?').get(req.user.id);
+  res.json({
+    userId: req.user.id,
+    username: req.user.username,
+    role: req.user.role,
+    scratchMode: userState?.scratch_mode === 1,
+    heatmapName: userState?.heatmap_name || null,
+  });
 });
 
 app.post('/api/auth/register', async (req, res) => {
@@ -1200,6 +1213,9 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
 // KRI CRUD
 app.get('/api/kris', requireAuth, (req, res) => {
   const { functionId, categoryId, subcategoryId, search } = req.query;
+  const userRow = db.prepare('SELECT scratch_mode FROM users WHERE id = ?').get(req.user.id);
+  const scratchMode = userRow && userRow.scratch_mode === 1;
+  const kriFilter = scratchMode ? 'k.user_id = ?' : '(k.user_id = ? OR k.user_id IS NULL)';
   let sql = `
     SELECT s.id as subcategory_id, s.code, s.description, s.category_id,
            c.code as category_code, c.name as category_name, c.function_id,
@@ -1210,7 +1226,7 @@ app.get('/api/kris', requireAuth, (req, res) => {
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
-    LEFT JOIN kris k ON k.subcategory_id = s.id AND (k.user_id = ? OR k.user_id IS NULL)
+    LEFT JOIN kris k ON k.subcategory_id = s.id AND ${kriFilter}
     LEFT JOIN (
       SELECT kri_id, saved_by, saved_at
       FROM kri_history
@@ -1274,8 +1290,6 @@ app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
         INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id)
         VALUES (?, ?, ?, ?, ?)
       `).run(subcategoryId, newKriId, v, req.session.username, req.user.id);
-
-      db.prepare('UPDATE users SET scratch_mode=0 WHERE id=?').run(req.user.id);
 
       res.json({ ok: true, kri_id: newKriId });
     }
@@ -1441,6 +1455,72 @@ app.delete('/api/admin/users/:id', requireAdmin, (req, res) => {
 
 app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 
+// ─── Admin: domain heatmaps ───────────────────────────────────────────────────
+
+app.get('/api/admin/domain-heatmaps', requireAdmin, (req, res) => {
+  const adminUser = db.prepare('SELECT email FROM users WHERE id=?').get(req.user.id);
+  const domain = adminUser?.email?.split('@')[1]?.toLowerCase();
+  if (!domain) return res.json([]);
+
+  const rows = db.prepare(`
+    SELECT u.id, u.username, u.email, u.scratch_mode, u.heatmap_name,
+           COUNT(k.id) AS kri_count,
+           MAX(k.updated_at) AS last_update
+    FROM users u
+    LEFT JOIN kris k ON k.user_id = u.id
+    WHERE LOWER(SUBSTR(u.email, INSTR(u.email,'@')+1)) = ?
+    GROUP BY u.id
+    ORDER BY u.id ASC
+  `).all(domain);
+
+  res.json(rows);
+});
+
+app.get('/api/admin/heatmap/:userId', requireAdmin, (req, res) => {
+  const userId = Number(req.params.userId);
+  const functions    = db.prepare('SELECT * FROM functions ORDER BY code').all();
+  const categories   = db.prepare('SELECT * FROM categories ORDER BY code').all();
+  const subcategories = db.prepare(`
+    SELECT s.*,
+           avg_k.avg_valoracion AS valoracion,
+           avg_k.kri_count AS kri_count
+    FROM subcategories s
+    LEFT JOIN (
+      SELECT subcategory_id,
+             AVG(valoracion) AS avg_valoracion,
+             COUNT(*) AS kri_count
+      FROM kris WHERE user_id = ?
+      GROUP BY subcategory_id
+    ) avg_k ON avg_k.subcategory_id = s.id
+    ORDER BY s.code
+  `).all(userId);
+
+  const avg = arr => arr.length ? arr.reduce((a, b) => a + b, 0) / arr.length : null;
+
+  const subsByCat = {};
+  subcategories.forEach(s => {
+    if (!subsByCat[s.category_id]) subsByCat[s.category_id] = [];
+    subsByCat[s.category_id].push(s);
+  });
+  const catsByFn = {};
+  categories.forEach(c => {
+    if (!catsByFn[c.function_id]) catsByFn[c.function_id] = [];
+    catsByFn[c.function_id].push(c);
+  });
+
+  const result = functions.map(fn => {
+    const fnCats = (catsByFn[fn.id] || []).map(cat => {
+      const catSubs = subsByCat[cat.id] || [];
+      const vals = catSubs.filter(s => s.valoracion != null).map(s => s.valoracion);
+      return { code: cat.code, name: cat.name, avgValoracion: avg(vals), kriCount: vals.length };
+    });
+    const allVals = fnCats.filter(c => c.avgValoracion != null).map(c => c.avgValoracion);
+    return { code: fn.code, name: fn.name, avgValoracion: avg(allVals), categories: fnCats };
+  });
+
+  res.json(result);
+});
+
 // ─── Scenario Routes ──────────────────────────────────────────────────────────
 
 app.post('/api/scenarios/apply', requireAuth, (req, res) => {
@@ -1460,19 +1540,28 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
   }
 
   if (scenario === 'scratch') {
-    db.prepare('UPDATE users SET scratch_mode=1 WHERE id=?').run(userId);
+    const name = typeof req.body.name === 'string' ? req.body.name.trim() : null;
+    db.prepare('UPDATE users SET scratch_mode=1, heatmap_name=? WHERE id=?').run(name, userId);
     return res.json({ ok: true, created: 0 });
   }
 
   db.prepare('UPDATE users SET scratch_mode=0 WHERE id=?').run(userId);
 
-  const ranges = {
-    empty:    { min:  0, max: 100, flag: null },
-    positive: { min: 70, max: 95,  flag: 'POSITIVO' },
-    neutral:  { min: 40, max: 65,  flag: 'POSITIVO' },
-    negative: { min:  5, max: 30,  flag: 'NEGATIVO' },
-  };
-  const { min, max, flag } = ranges[scenario];
+  const templateFile = {
+    empty:    'RANDOM.json',
+    positive: 'POSITIVA.json',
+    neutral:  'NEUTRAL.json',
+    negative: 'NEGATIVA.json',
+  }[scenario];
+
+  const rawTemplate = JSON.parse(fs.readFileSync(path.join(__dirname, templateFile), 'utf8'));
+  const templateMap = {};
+  for (const r of rawTemplate) {
+    if (r.kri_name && r.kri_name.includes('Simulación')) {
+      templateMap[r.subcategory_id] = { val: r.valoracion, flag: r.cmmi_flag };
+    }
+  }
+
   const label = { empty: 'random', positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
 
   const subcategories = db.prepare('SELECT id FROM subcategories').all();
@@ -1483,11 +1572,11 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
     'INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id) VALUES (?, ?, ?, ?, ?)'
   );
 
-  const flags = ['POSITIVO', 'NEGATIVO'];
   const insertAll = db.transaction(() => {
     for (const sub of subcategories) {
-      const val = Math.round(min + Math.random() * (max - min));
-      const f = flag ?? flags[Math.floor(Math.random() * 2)];
+      const tpl = templateMap[sub.id];
+      const val = tpl ? tpl.val : Math.round(Math.random() * 100);
+      const f   = tpl ? tpl.flag : 'POSITIVO';
       const info = insKri.run(sub.id, `KRI — Simulación ${label}`, f, val, userId);
       insHist.run(sub.id, info.lastInsertRowid, val, req.session.username, userId);
     }

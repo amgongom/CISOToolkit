@@ -72,15 +72,22 @@
     <div class="hud-spacer"></div>
 
     <!-- Scenario selector -->
-    <div class="hud-scenario">
+    <div class="hud-scenario" id="hud-scenario-wrap">
       <select id="scenarioSelect">
+        <option value="">— Seleccionar escenario —</option>
         <option value="empty">Simulación random</option>
         <option value="positive">Simulación positiva</option>
         <option value="neutral">Simulación neutral</option>
         <option value="negative">Simulación negativa</option>
-        <option value="scratch">Crear desde cero</option>
       </select>
       <button class="btn btn-secondary btn-sm" id="applyScenarioBtn">Aplicar</button>
+    </div>
+    <!-- Title shown when scratch mode is active -->
+    <div class="hud-heatmap-title hidden" id="hud-heatmap-title">
+      <span class="hud-heatmap-title-text" id="heatmap-title-text"></span>
+    </div>
+    <div class="hud-scratch">
+      <button class="btn btn-secondary btn-sm" id="scratchBtn">Crear desde cero</button>
     </div>
 
     <!-- Legend -->
@@ -192,6 +199,18 @@
       <button class="btn btn-danger" id="hm-btn-del" style="display:none;margin-right:auto">Eliminar</button>
       <button class="btn btn-secondary" id="hm-btn-cancel">Cancelar</button>
       <button class="btn btn-primary"  id="hm-btn-save">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Scratch name modal -->
+<div id="scratch-name-modal" class="hidden">
+  <div class="scratch-name-box">
+    <p class="scratch-name-label">Nombre del Heatmap</p>
+    <input id="scratch-name-input" type="text" class="scratch-name-input" placeholder="Ej: Análisis NIST Q2 2026" maxlength="60" autocomplete="off">
+    <div class="scratch-name-actions">
+      <button class="btn btn-secondary btn-sm" id="scratch-name-cancel">Cancelar</button>
+      <button class="btn btn-primary btn-sm" id="scratch-name-confirm">Confirmar</button>
     </div>
   </div>
 </div>

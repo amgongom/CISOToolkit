@@ -42,8 +42,22 @@ const STATE = {
 (async () => {
   await initTopbar('heatmap');
   bindUI();
-  await applyScenario('empty');
+  await initHeatmapState();
 })();
+
+async function initHeatmapState() {
+  const res  = await fetch('/api/auth/me');
+  const user = await res.json();
+  if (user.scratchMode) {
+    document.getElementById('heatmap-title-text').textContent = user.heatmapName || 'Heatmap';
+    document.getElementById('hud-heatmap-title').classList.remove('hidden');
+    document.getElementById('hud-scenario-wrap').style.display = 'none';
+    document.getElementById('scratchBtn').style.display = 'none';
+    await loadData();
+  } else {
+    await applyScenario('empty');
+  }
+}
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 async function loadData() {
@@ -788,8 +802,34 @@ async function exportHeatmap() {
   else if (format === 'xlsx') await exportExcelFile(new URLSearchParams(), 'btnExport');
 }
 
+// ── Scratch name modal ────────────────────────────────────────────────────────
+function openScratchModal() {
+  const modal = document.getElementById('scratch-name-modal');
+  const input = document.getElementById('scratch-name-input');
+  modal.classList.remove('hidden');
+  input.value = '';
+  input.focus();
+}
+
+function closeScratchModal() {
+  document.getElementById('scratch-name-modal').classList.add('hidden');
+}
+
+async function confirmScratchName() {
+  const input = document.getElementById('scratch-name-input');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  closeScratchModal();
+  await applyScenario('scratch', name);
+  // Show title, hide selector + apply button
+  document.getElementById('heatmap-title-text').textContent = name;
+  document.getElementById('hud-heatmap-title').classList.remove('hidden');
+  document.getElementById('hud-scenario-wrap').style.display = 'none';
+  document.getElementById('scratchBtn').style.display = 'none';
+}
+
 // ── UI bindings ───────────────────────────────────────────────────────────────
-async function applyScenario(autoScenario) {
+async function applyScenario(autoScenario, scratchName) {
   const select = document.getElementById('scenarioSelect');
   const scenario = typeof autoScenario === 'string' ? autoScenario : select?.value;
   if (!scenario) return;
@@ -797,10 +837,12 @@ async function applyScenario(autoScenario) {
   const btn = document.getElementById('applyScenarioBtn');
   if (btn) btn.disabled = true;
   try {
+    const body = { scenario };
+    if (scratchName) body.name = scratchName;
     const res = await fetch('/api/scenarios/apply', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ scenario })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     if (!res.ok) { toast(data.error || 'Error al aplicar escenario', 'error'); return; }
@@ -820,6 +862,17 @@ function bindUI() {
 
   // Scenario selector
   document.getElementById('applyScenarioBtn')?.addEventListener('click', applyScenario);
+
+  // Scratch: open name modal
+  document.getElementById('scratchBtn')?.addEventListener('click', openScratchModal);
+
+  // Scratch name modal
+  document.getElementById('scratch-name-confirm')?.addEventListener('click', confirmScratchName);
+  document.getElementById('scratch-name-cancel')?.addEventListener('click', closeScratchModal);
+  document.getElementById('scratch-name-input')?.addEventListener('keydown', e => {
+    if (e.key === 'Enter') confirmScratchName();
+    if (e.key === 'Escape') closeScratchModal();
+  });
 
   // Export button
   document.getElementById('btnExport')?.addEventListener('click', exportHeatmap);

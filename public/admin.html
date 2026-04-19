@@ -63,8 +63,42 @@
         </tbody>
       </table>
     </div>
+
+    <!-- Heatmaps del dominio -->
+    <div class="page-header" style="margin-top:2rem">
+      <div class="page-header-text">
+        <div class="page-header-framework">Dominio</div>
+        <div class="page-header-title" id="domainHeatmapsTitle">Heatmaps del Dominio</div>
+      </div>
+    </div>
+    <div class="card">
+      <table class="kri-table" id="heatmapsTable">
+        <thead>
+          <tr>
+            <th>Usuario</th>
+            <th>Heatmap</th>
+            <th>KRIs</th>
+            <th>Modo</th>
+            <th>Última actualización</th>
+            <th>Acciones</th>
+          </tr>
+        </thead>
+        <tbody id="heatmapsBody">
+          <tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Cargando…</td></tr>
+        </tbody>
+      </table>
+    </div>
   </main>
 </div>
+
+<!-- Modal: ver heatmap de usuario -->
+<dialog id="hmDialog" class="admin-dialog" style="max-width:620px;width:90vw">
+  <h3 class="dialog-title" id="hmDialogTitle">Heatmap</h3>
+  <div id="hmDialogContent" style="margin-top:.75rem;max-height:60vh;overflow-y:auto"></div>
+  <div style="display:flex;justify-content:flex-end;margin-top:1rem">
+    <button class="btn-secondary" id="hmClose">Cerrar</button>
+  </div>
+</dialog>
 
 <!-- Modal: cambiar contraseña -->
 <dialog id="pwdDialog" class="admin-dialog">
@@ -102,6 +136,7 @@
   });
 
   await loadUsers();
+  await loadDomainHeatmaps();
 })();
 
 async function loadUsers() {
@@ -167,6 +202,87 @@ document.getElementById('pwdSave').addEventListener('click', async () => {
 
   document.getElementById('pwdDialog').close();
   toast('Contraseña actualizada');
+});
+
+async function loadDomainHeatmaps() {
+  const res = await fetch('/api/admin/domain-heatmaps');
+  if (!res.ok) return;
+  const rows = await res.json();
+
+  // Update section title with domain
+  if (rows.length) {
+    const domain = rows[0].email?.split('@')[1];
+    if (domain) {
+      const title = document.getElementById('domainHeatmapsTitle');
+      if (title) title.textContent = `Heatmaps del Dominio — @${domain}`;
+    }
+  }
+
+  const tbody = document.getElementById('heatmapsBody');
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;color:var(--text-muted)">Sin usuarios en este dominio</td></tr>';
+    return;
+  }
+  tbody.innerHTML = rows.map(r => {
+    const name   = r.heatmap_name ? `<strong>${esc(r.heatmap_name)}</strong>` : '<span style="color:var(--text-muted)">—</span>';
+    const modo   = r.scratch_mode ? '<span style="color:var(--accent);font-size:.75rem">Scratch</span>' : '<span style="color:var(--text-muted);font-size:.75rem">Escenario</span>';
+    const update = r.last_update ? r.last_update.slice(0,16) : '—';
+    return `
+      <tr>
+        <td><strong>${esc(r.username)}</strong></td>
+        <td>${name}</td>
+        <td>${r.kri_count ?? 0}</td>
+        <td>${modo}</td>
+        <td style="font-size:.78rem;color:var(--text-muted)">${update}</td>
+        <td><button class="btn-secondary btn-sm" onclick="viewHeatmap(${r.id},'${esc(r.username)}','${esc(r.heatmap_name||'')}')">Ver</button></td>
+      </tr>`;
+  }).join('');
+}
+
+async function viewHeatmap(userId, username, heatmapName) {
+  const res = await fetch(`/api/admin/heatmap/${userId}`);
+  if (!res.ok) { toast('Error al cargar heatmap', 'error'); return; }
+  const data = await res.json();
+
+  document.getElementById('hmDialogTitle').textContent =
+    heatmapName ? `${username} — ${heatmapName}` : `Heatmap de ${username}`;
+
+  const cmmiColor = v => {
+    if (v == null) return 'var(--text-muted)';
+    if (v < 20)  return 'var(--n1-color,#ef4444)';
+    if (v < 40)  return '#f97316';
+    if (v < 60)  return '#fbbf24';
+    if (v < 80)  return '#a3e635';
+    return '#16a34a';
+  };
+
+  const rows = data.flatMap(fn =>
+    fn.categories.map(cat => {
+      const v = cat.avgValoracion;
+      const val = v != null ? v.toFixed(1) : '—';
+      const color = cmmiColor(v);
+      return `<tr>
+        <td style="font-size:.78rem;color:var(--text-muted)">${esc(fn.code)}</td>
+        <td style="font-size:.8rem">${esc(cat.code)}</td>
+        <td style="font-size:.78rem;color:var(--text-muted)">${esc(cat.name)}</td>
+        <td style="text-align:right;font-weight:600;color:${color}">${val}</td>
+        <td style="text-align:right;font-size:.75rem;color:var(--text-muted)">${cat.kriCount}</td>
+      </tr>`;
+    })
+  );
+
+  document.getElementById('hmDialogContent').innerHTML = rows.length
+    ? `<table class="kri-table" style="font-size:.82rem">
+        <thead><tr><th>Función</th><th>Categoría</th><th>Nombre</th><th style="text-align:right">Avg</th><th style="text-align:right">KRIs</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+       </table>`
+    : '<p style="color:var(--text-muted);text-align:center">Sin KRIs registrados</p>';
+
+  document.getElementById('hmDialog').showModal();
+}
+
+document.getElementById('hmClose').addEventListener('click', () => {
+  document.getElementById('hmDialog').close();
 });
 
 async function deleteUser(id, username) {

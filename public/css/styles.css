@@ -859,6 +859,74 @@ tbody td {
 }
 .hud-scenario select:focus { outline: none; border-color: var(--accent); }
 
+/* ── HUD heatmap title (scratch mode) ───────────────────────────────────── */
+.hud-heatmap-title {
+  display: flex;
+  align-items: center;
+  margin-right: .75rem;
+}
+.hud-heatmap-title.hidden { display: none; }
+.hud-heatmap-title-text {
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  padding: .25rem .65rem;
+  max-width: 220px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Scratch name modal ──────────────────────────────────────────────────── */
+#scratch-name-modal {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,.65);
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(4px);
+}
+#scratch-name-modal.hidden { display: none; }
+.scratch-name-box {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-mid);
+  border-top: 2px solid rgba(77,159,255,.35);
+  border-radius: var(--radius-lg);
+  padding: 1.5rem 1.75rem;
+  width: min(380px, calc(100vw - 2rem));
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  box-shadow: var(--shadow-lg);
+}
+.scratch-name-label {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+.scratch-name-input {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-mid);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: .85rem;
+  padding: .45rem .65rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+.scratch-name-input:focus { outline: none; border-color: var(--accent); }
+.scratch-name-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: .5rem;
+}
+
 /* ── Role badges ──────────────────────────────────────────────────────────── */
 .role-badge {
   display: inline-block;
