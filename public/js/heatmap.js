@@ -42,17 +42,7 @@ const STATE = {
 (async () => {
   await initTopbar('heatmap');
   bindUI();
-  if (window._heatmapName) showHeatmapName(window._heatmapName);
-  if (window._scratchMode) {
-    hideScenarioSelector();
-    await loadData();
-  } else {
-    await loadData();
-    const hasKris = STATE.rawData.some(fn =>
-      fn.categories.some(cat => cat.subcategories.some(s => s.valoracion != null))
-    );
-    if (!hasKris) await applyScenario('empty');
-  }
+  await applyScenario('empty');
 })();
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -799,81 +789,11 @@ async function exportHeatmap() {
 }
 
 // ── UI bindings ───────────────────────────────────────────────────────────────
-function hideScenarioSelector() {
-  const wrap = document.querySelector('.hud-scenario');
-  if (wrap) wrap.style.display = 'none';
-}
-
-function showHeatmapName(name) {
-  const el  = document.getElementById('hm-heatmap-name');
-  const div = document.getElementById('hm-heatmap-name-divider');
-  if (!el) return;
-  el.textContent = name;
-  el.style.display = '';
-  if (div) div.style.display = '';
-}
-
-function showNameModal() {
-  return new Promise(resolve => {
-    const modal   = document.getElementById('hm-name-modal');
-    const input   = document.getElementById('hm-name-input');
-    const btnOk   = document.getElementById('hm-name-confirm');
-    const btnCancel = document.getElementById('hm-name-cancel');
-    if (!modal) { resolve(null); return; }
-    input.value = '';
-    modal.classList.remove('hidden');
-    input.focus();
-
-    function cleanup(result) {
-      modal.classList.add('hidden');
-      btnOk.removeEventListener('click', onConfirm);
-      btnCancel.removeEventListener('click', onCancel);
-      input.removeEventListener('keydown', onKey);
-      resolve(result);
-    }
-    function onConfirm() {
-      const name = input.value.trim();
-      if (!name) { input.focus(); return; }
-      cleanup(name);
-    }
-    function onCancel() { cleanup(null); }
-    function onKey(e) {
-      if (e.key === 'Enter') onConfirm();
-      if (e.key === 'Escape') onCancel();
-    }
-    btnOk.addEventListener('click', onConfirm);
-    btnCancel.addEventListener('click', onCancel);
-    input.addEventListener('keydown', onKey);
-  });
-}
-
 async function applyScenario(autoScenario) {
   const select = document.getElementById('scenarioSelect');
   const scenario = typeof autoScenario === 'string' ? autoScenario : select?.value;
   if (!scenario) return;
-
-  if (scenario === 'scratch') {
-    const name = await showNameModal();
-    if (name === null) return;
-    const btn = document.getElementById('applyScenarioBtn');
-    if (btn) btn.disabled = true;
-    try {
-      const res = await fetch('/api/scenarios/apply', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ scenario: 'scratch', heatmap_name: name }),
-      });
-      const data = await res.json();
-      if (!res.ok) { toast(data.error || 'Error', 'error'); return; }
-      showHeatmapName(name);
-      hideScenarioSelector();
-      await loadData();
-    } catch { toast('Error de conexión', 'error'); }
-    finally { const btn = document.getElementById('applyScenarioBtn'); if (btn) btn.disabled = false; }
-    return;
-  }
-
-  const labels = { empty: 'Simulación random', positive: 'Simulación positiva', neutral: 'Simulación neutral', negative: 'Simulación negativa' };
+  const labels = { empty: 'Simulación random', positive: 'Simulación positiva', neutral: 'Simulación neutral', negative: 'Simulación negativa', scratch: 'Crear desde cero' };
   const btn = document.getElementById('applyScenarioBtn');
   if (btn) btn.disabled = true;
   try {

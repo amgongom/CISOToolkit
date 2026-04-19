@@ -248,33 +248,12 @@ db.exec(`
     console.log('[M8] Done.');
   }
 
-  // M10: delete orphan KRIs with user_id IS NULL (seed data, no longer used)
-  const nullKriCount = db.prepare('SELECT COUNT(*) as c FROM kris WHERE user_id IS NULL').get().c;
-  if (nullKriCount > 0) {
-    console.log(`[M10] Deleting ${nullKriCount} orphan KRIs (user_id IS NULL)...`);
-    const nullIds = db.prepare('SELECT id FROM kris WHERE user_id IS NULL').all().map(r => r.id);
-    if (nullIds.length) {
-      const ph = nullIds.map(() => '?').join(',');
-      db.prepare(`DELETE FROM kri_history WHERE kri_id IN (${ph})`).run(...nullIds);
-    }
-    db.prepare('DELETE FROM kris WHERE user_id IS NULL').run();
-    console.log('[M10] Done.');
-  }
-
   // M9: add scratch_mode to users
   const userCols9 = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
   if (!userCols9.includes('scratch_mode')) {
     console.log('[M9] Adding scratch_mode to users...');
     db.exec('ALTER TABLE users ADD COLUMN scratch_mode INTEGER DEFAULT 0');
     console.log('[M9] Done.');
-  }
-
-  // M11: add heatmap_name to users
-  const userCols11 = db.prepare("PRAGMA table_info(users)").all().map(c => c.name);
-  if (!userCols11.includes('heatmap_name')) {
-    console.log('[M11] Adding heatmap_name to users...');
-    db.exec('ALTER TABLE users ADD COLUMN heatmap_name TEXT');
-    console.log('[M11] Done.');
   }
 })();
 
@@ -1059,7 +1038,7 @@ app.post('/api/auth/logout', (req, res, next) => {
 
 app.get('/api/auth/me', (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).json({ error: 'No autenticado' });
-  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role, scratch_mode: req.user.scratch_mode || 0, heatmap_name: req.user.heatmap_name || null });
+  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role });
 });
 
 app.post('/api/auth/register', async (req, res) => {
@@ -1166,6 +1145,9 @@ app.get('/api/examples', requireAuth, (req, res) => {
 app.get('/api/heatmap', requireAuth, (req, res) => {
   const functions    = db.prepare('SELECT * FROM functions ORDER BY code').all();
   const categories   = db.prepare('SELECT * FROM categories ORDER BY code').all();
+  const userRow      = db.prepare('SELECT scratch_mode FROM users WHERE id = ?').get(req.user.id);
+  const scratchMode  = userRow && userRow.scratch_mode === 1;
+  const kriFilter    = scratchMode ? 'user_id = ?' : '(user_id = ? OR user_id IS NULL)';
   const subcategories = db.prepare(`
     SELECT s.*,
            avg_k.avg_valoracion  AS valoracion,
@@ -1179,11 +1161,11 @@ app.get('/api/heatmap', requireAuth, (req, res) => {
     LEFT JOIN (
       SELECT subcategory_id, AVG(valoracion) AS avg_valoracion
       FROM kris
-      WHERE user_id = ?
+      WHERE ${kriFilter}
       GROUP BY subcategory_id
     ) avg_k ON avg_k.subcategory_id = s.id
     LEFT JOIN kris latest_k ON latest_k.id = (
-      SELECT id FROM kris WHERE subcategory_id = s.id AND user_id = ? ORDER BY id DESC LIMIT 1
+      SELECT id FROM kris WHERE subcategory_id = s.id AND ${kriFilter} ORDER BY id DESC LIMIT 1
     )
     ORDER BY s.code
   `).all(req.user.id, req.user.id);
@@ -1228,7 +1210,7 @@ app.get('/api/kris', requireAuth, (req, res) => {
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
-    LEFT JOIN kris k ON k.subcategory_id = s.id AND k.user_id = ?
+    LEFT JOIN kris k ON k.subcategory_id = s.id AND (k.user_id = ? OR k.user_id IS NULL)
     LEFT JOIN (
       SELECT kri_id, saved_by, saved_at
       FROM kri_history
@@ -1262,7 +1244,7 @@ app.post('/api/kris/:subcategoryId', requireAuth, (req, res) => {
   try {
     if (kri_id) {
       // UPDATE existing KRI — verify ownership
-      const existing = db.prepare('SELECT id FROM kris WHERE id = ? AND user_id = ?').get(kri_id, req.user.id);
+      const existing = db.prepare('SELECT id FROM kris WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(kri_id, req.user.id);
       if (!existing) return res.status(404).json({ error: 'KRI no encontrado' });
 
       db.prepare(`
@@ -1307,7 +1289,7 @@ app.get('/api/kris/:kriId/history', requireAuth, (req, res) => {
   const rows = db.prepare(`
     SELECT valoracion, saved_by, saved_at
     FROM kri_history
-    WHERE kri_id = ? AND user_id = ?
+    WHERE kri_id = ? AND (user_id = ? OR user_id IS NULL)
     ORDER BY saved_at DESC
     LIMIT 50
   `).all(req.params.kriId, req.user.id);
@@ -1317,7 +1299,7 @@ app.get('/api/kris/:kriId/history', requireAuth, (req, res) => {
 // DELETE by kri id
 app.delete('/api/kris/:kriId', requireAuth, (req, res) => {
   const { kriId } = req.params;
-  const owned = db.prepare('SELECT id FROM kris WHERE id = ? AND user_id = ?').get(kriId, req.user.id);
+  const owned = db.prepare('SELECT id FROM kris WHERE id = ? AND (user_id = ? OR user_id IS NULL)').get(kriId, req.user.id);
   if (!owned) return res.status(403).json({ error: 'No autorizado' });
   try {
     db.prepare('DELETE FROM kri_history WHERE kri_id = ?').run(kriId);
@@ -1341,7 +1323,7 @@ app.get('/api/export/excel', requireAuth, (req, res) => {
     FROM subcategories s
     JOIN categories c ON s.category_id = c.id
     JOIN functions f ON c.function_id = f.id
-    LEFT JOIN kris k ON k.subcategory_id = s.id AND k.user_id = ?
+    LEFT JOIN kris k ON k.subcategory_id = s.id AND (k.user_id = ? OR k.user_id IS NULL)
     LEFT JOIN (
       SELECT kri_id, saved_by, saved_at
       FROM kri_history
@@ -1461,47 +1443,13 @@ app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 
 // ─── Scenario Routes ──────────────────────────────────────────────────────────
 
-// ─── Scenario Templates (deterministic seeded values) ─────────────────────────
-let SCENARIO_TEMPLATES = null;
-
-function seededRand(seed) {
-  let s = seed >>> 0;
-  return () => {
-    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
-    return (s >>> 0) / 4294967295;
-  };
-}
-
-function buildScenarioTemplates() {
-  const subcatIds = db.prepare('SELECT id FROM subcategories ORDER BY id').all().map(r => r.id);
-  const defs = {
-    empty:    { min:  0, max: 100, flags: ['POSITIVO','NEGATIVO'], seed: 42   },
-    positive: { min: 70, max: 93,  flags: ['POSITIVO'],            seed: 137  },
-    neutral:  { min: 38, max: 62,  flags: ['POSITIVO','NEGATIVO'], seed: 256  },
-    negative: { min:  5, max: 28,  flags: ['NEGATIVO'],            seed: 999  },
-  };
-  SCENARIO_TEMPLATES = {};
-  for (const [sc, { min, max, flags, seed }] of Object.entries(defs)) {
-    const r = seededRand(seed);
-    SCENARIO_TEMPLATES[sc] = {};
-    for (const id of subcatIds) {
-      const val  = Math.round(min + r() * (max - min));
-      const flag = flags[Math.floor(r() * flags.length)];
-      SCENARIO_TEMPLATES[sc][id] = { val, flag };
-    }
-  }
-}
-
 app.post('/api/scenarios/apply', requireAuth, (req, res) => {
   const { scenario } = req.body;
   const valid = ['empty', 'positive', 'neutral', 'negative', 'scratch'];
   if (!valid.includes(scenario))
     return res.status(400).json({ error: 'Escenario inválido' });
 
-  const userId   = req.user.id;
-  const userRow  = db.prepare('SELECT scratch_mode FROM users WHERE id=?').get(userId);
-  if (userRow && userRow.scratch_mode === 1)
-    return res.status(403).json({ error: 'Modo manual activo: el selector de escenarios está desactivado' });
+  const userId = req.session.userId;
 
   // Delete existing KRIs and history for this user
   const userKriIds = db.prepare('SELECT id FROM kris WHERE user_id = ?').all(userId).map(r => r.id);
@@ -1512,23 +1460,35 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
   }
 
   if (scenario === 'scratch') {
-    const hmName = (req.body.heatmap_name || '').trim().slice(0, 80) || null;
-    db.prepare('UPDATE users SET scratch_mode=1, heatmap_name=? WHERE id=?').run(hmName, userId);
-    return res.json({ ok: true, created: 0, heatmap_name: hmName });
+    db.prepare('UPDATE users SET scratch_mode=1 WHERE id=?').run(userId);
+    return res.json({ ok: true, created: 0 });
   }
 
-  if (!SCENARIO_TEMPLATES) buildScenarioTemplates();
-  const template = SCENARIO_TEMPLATES[scenario];
-  const label    = { empty: 'random', positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
+  db.prepare('UPDATE users SET scratch_mode=0 WHERE id=?').run(userId);
+
+  const ranges = {
+    empty:    { min:  0, max: 100, flag: null },
+    positive: { min: 70, max: 95,  flag: 'POSITIVO' },
+    neutral:  { min: 40, max: 65,  flag: 'POSITIVO' },
+    negative: { min:  5, max: 30,  flag: 'NEGATIVO' },
+  };
+  const { min, max, flag } = ranges[scenario];
+  const label = { empty: 'random', positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
 
   const subcategories = db.prepare('SELECT id FROM subcategories').all();
-  const insKri  = db.prepare('INSERT INTO kris (subcategory_id, kri_name, cmmi_flag, valoracion, user_id) VALUES (?, ?, ?, ?, ?)');
-  const insHist = db.prepare('INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id) VALUES (?, ?, ?, ?, ?)');
+  const insKri = db.prepare(
+    'INSERT INTO kris (subcategory_id, kri_name, cmmi_flag, valoracion, user_id) VALUES (?, ?, ?, ?, ?)'
+  );
+  const insHist = db.prepare(
+    'INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id) VALUES (?, ?, ?, ?, ?)'
+  );
 
+  const flags = ['POSITIVO', 'NEGATIVO'];
   const insertAll = db.transaction(() => {
     for (const sub of subcategories) {
-      const { val, flag } = template[sub.id];
-      const info = insKri.run(sub.id, `KRI — Simulación ${label}`, flag, val, userId);
+      const val = Math.round(min + Math.random() * (max - min));
+      const f = flag ?? flags[Math.floor(Math.random() * 2)];
+      const info = insKri.run(sub.id, `KRI — Simulación ${label}`, f, val, userId);
       insHist.run(sub.id, info.lastInsertRowid, val, req.session.username, userId);
     }
   });
