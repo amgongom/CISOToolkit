@@ -1498,7 +1498,7 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
   if (!valid.includes(scenario))
     return res.status(400).json({ error: 'Escenario inválido' });
 
-  const userId   = req.session.userId;
+  const userId   = req.user.id;
   const userRow  = db.prepare('SELECT scratch_mode FROM users WHERE id=?').get(userId);
   if (userRow && userRow.scratch_mode === 1)
     return res.status(403).json({ error: 'Modo manual activo: el selector de escenarios está desactivado' });
