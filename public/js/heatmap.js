@@ -58,6 +58,7 @@ async function loadData() {
       cat.subcategories.forEach(s => {
         STATE.subById[s.id] = {
           ...s,
+          subId: s.id,
           fnCode: fn.code, fnName: fn.name,
           catCode: cat.code, catName: cat.name,
         };
