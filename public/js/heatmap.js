@@ -784,7 +784,7 @@ async function exportHeatmap() {
 // ── UI bindings ───────────────────────────────────────────────────────────────
 async function applyScenario(autoScenario) {
   const select = document.getElementById('scenarioSelect');
-  const scenario = autoScenario ?? select?.value;
+  const scenario = typeof autoScenario === 'string' ? autoScenario : select?.value;
   if (!scenario) return;
   const labels = { empty: 'Simulación random', positive: 'Simulación positiva', neutral: 'Simulación neutral', negative: 'Simulación negativa', scratch: 'Crear desde cero' };
   const btn = document.getElementById('applyScenarioBtn');
