@@ -202,7 +202,8 @@ async function initTopbar(activePage) {
   const user = await checkAuth();
   if (!user) return;
 
-  window._userRole = user.role;
+  window._userRole    = user.role;
+  window._scratchMode = user.scratch_mode === 1;
 
   const el = document.getElementById('topbarUser');
   if (el) el.textContent = user.username.includes('@') ? user.username.split('@')[0] : user.username;

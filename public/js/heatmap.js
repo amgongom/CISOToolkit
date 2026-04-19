@@ -42,7 +42,16 @@ const STATE = {
 (async () => {
   await initTopbar('heatmap');
   bindUI();
-  await applyScenario('empty');
+  if (window._scratchMode) {
+    hideScenarioSelector();
+    await loadData();
+  } else {
+    await loadData();
+    const hasKris = STATE.rawData.some(fn =>
+      fn.categories.some(cat => cat.subcategories.some(s => s.valoracion != null))
+    );
+    if (!hasKris) await applyScenario('empty');
+  }
 })();
 
 // ── Data ──────────────────────────────────────────────────────────────────────
@@ -789,6 +798,11 @@ async function exportHeatmap() {
 }
 
 // ── UI bindings ───────────────────────────────────────────────────────────────
+function hideScenarioSelector() {
+  const wrap = document.querySelector('.hud-scenario');
+  if (wrap) wrap.style.display = 'none';
+}
+
 async function applyScenario(autoScenario) {
   const select = document.getElementById('scenarioSelect');
   const scenario = typeof autoScenario === 'string' ? autoScenario : select?.value;
@@ -806,6 +820,7 @@ async function applyScenario(autoScenario) {
     if (!res.ok) { toast(data.error || 'Error al aplicar escenario', 'error'); return; }
     if (!autoScenario) toast(`Escenario "${labels[scenario]}" aplicado (${data.created ?? 0} KRIs)`);
     if (select && !autoScenario) select.value = '';
+    if (scenario === 'scratch') { hideScenarioSelector(); await loadData(); return; }
     await loadData();
   } catch (e) {
     toast('Error de conexión', 'error');

@@ -1051,7 +1051,7 @@ app.post('/api/auth/logout', (req, res, next) => {
 
 app.get('/api/auth/me', (req, res) => {
   if (!req.isAuthenticated()) return res.status(401).json({ error: 'No autenticado' });
-  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role });
+  res.json({ userId: req.user.id, username: req.user.username, role: req.user.role, scratch_mode: req.user.scratch_mode || 0 });
 });
 
 app.post('/api/auth/register', async (req, res) => {
@@ -1453,13 +1453,47 @@ app.get('/api/version', (req, res) => res.json({ version: APP_VERSION }));
 
 // ─── Scenario Routes ──────────────────────────────────────────────────────────
 
+// ─── Scenario Templates (deterministic seeded values) ─────────────────────────
+let SCENARIO_TEMPLATES = null;
+
+function seededRand(seed) {
+  let s = seed >>> 0;
+  return () => {
+    s ^= s << 13; s ^= s >>> 17; s ^= s << 5;
+    return (s >>> 0) / 4294967295;
+  };
+}
+
+function buildScenarioTemplates() {
+  const subcatIds = db.prepare('SELECT id FROM subcategories ORDER BY id').all().map(r => r.id);
+  const defs = {
+    empty:    { min:  0, max: 100, flags: ['POSITIVO','NEGATIVO'], seed: 42   },
+    positive: { min: 70, max: 93,  flags: ['POSITIVO'],            seed: 137  },
+    neutral:  { min: 38, max: 62,  flags: ['POSITIVO','NEGATIVO'], seed: 256  },
+    negative: { min:  5, max: 28,  flags: ['NEGATIVO'],            seed: 999  },
+  };
+  SCENARIO_TEMPLATES = {};
+  for (const [sc, { min, max, flags, seed }] of Object.entries(defs)) {
+    const r = seededRand(seed);
+    SCENARIO_TEMPLATES[sc] = {};
+    for (const id of subcatIds) {
+      const val  = Math.round(min + r() * (max - min));
+      const flag = flags[Math.floor(r() * flags.length)];
+      SCENARIO_TEMPLATES[sc][id] = { val, flag };
+    }
+  }
+}
+
 app.post('/api/scenarios/apply', requireAuth, (req, res) => {
   const { scenario } = req.body;
   const valid = ['empty', 'positive', 'neutral', 'negative', 'scratch'];
   if (!valid.includes(scenario))
     return res.status(400).json({ error: 'Escenario inválido' });
 
-  const userId = req.session.userId;
+  const userId   = req.session.userId;
+  const userRow  = db.prepare('SELECT scratch_mode FROM users WHERE id=?').get(userId);
+  if (userRow && userRow.scratch_mode === 1)
+    return res.status(403).json({ error: 'Modo manual activo: el selector de escenarios está desactivado' });
 
   // Delete existing KRIs and history for this user
   const userKriIds = db.prepare('SELECT id FROM kris WHERE user_id = ?').all(userId).map(r => r.id);
@@ -1474,31 +1508,18 @@ app.post('/api/scenarios/apply', requireAuth, (req, res) => {
     return res.json({ ok: true, created: 0 });
   }
 
-  db.prepare('UPDATE users SET scratch_mode=0 WHERE id=?').run(userId);
-
-  const ranges = {
-    empty:    { min:  0, max: 100, flag: null },
-    positive: { min: 70, max: 95,  flag: 'POSITIVO' },
-    neutral:  { min: 40, max: 65,  flag: 'POSITIVO' },
-    negative: { min:  5, max: 30,  flag: 'NEGATIVO' },
-  };
-  const { min, max, flag } = ranges[scenario];
-  const label = { empty: 'random', positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
+  if (!SCENARIO_TEMPLATES) buildScenarioTemplates();
+  const template = SCENARIO_TEMPLATES[scenario];
+  const label    = { empty: 'random', positive: 'positiva', neutral: 'neutral', negative: 'negativa' }[scenario];
 
   const subcategories = db.prepare('SELECT id FROM subcategories').all();
-  const insKri = db.prepare(
-    'INSERT INTO kris (subcategory_id, kri_name, cmmi_flag, valoracion, user_id) VALUES (?, ?, ?, ?, ?)'
-  );
-  const insHist = db.prepare(
-    'INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id) VALUES (?, ?, ?, ?, ?)'
-  );
+  const insKri  = db.prepare('INSERT INTO kris (subcategory_id, kri_name, cmmi_flag, valoracion, user_id) VALUES (?, ?, ?, ?, ?)');
+  const insHist = db.prepare('INSERT INTO kri_history (subcategory_id, kri_id, valoracion, saved_by, user_id) VALUES (?, ?, ?, ?, ?)');
 
-  const flags = ['POSITIVO', 'NEGATIVO'];
   const insertAll = db.transaction(() => {
     for (const sub of subcategories) {
-      const val = Math.round(min + Math.random() * (max - min));
-      const f = flag ?? flags[Math.floor(Math.random() * 2)];
-      const info = insKri.run(sub.id, `KRI — Simulación ${label}`, f, val, userId);
+      const { val, flag } = template[sub.id];
+      const info = insKri.run(sub.id, `KRI — Simulación ${label}`, flag, val, userId);
       insHist.run(sub.id, info.lastInsertRowid, val, req.session.username, userId);
     }
   });
